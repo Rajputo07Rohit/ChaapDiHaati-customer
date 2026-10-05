@@ -36,6 +36,7 @@ export interface OrderRow {
   payment_status: string;
   net_total_paise: number;
   subtotal_paise: number;
+  delivery_fee_paise: number;
   notes: string | null;
   created_at: string;
 }

@@ -1,3 +1,5 @@
+const SESSION_STORAGE_KEY = "cdh_customer_session";
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -10,11 +12,14 @@ export class ApiError extends Error {
   }
 }
 
-// Customer auth is a bearer token (mock today, a Firebase ID token later),
-// not the staff cookie session — the admin app's client.ts doesn't apply here.
-let authToken: string | null = null;
-export function setAuthToken(token: string | null) {
-  authToken = token;
+function authHeader(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    const session = raw ? (JSON.parse(raw) as { token?: string }) : null;
+    return session?.token ? { Authorization: `Bearer ${session.token}` } : {};
+  } catch {
+    return {};
+  }
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -22,7 +27,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...options,
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      ...authHeader(),
       ...(options.headers || {}),
     },
   });
@@ -33,6 +38,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const body = isJson ? await res.json().catch(() => null) : null;
 
   if (!res.ok) {
+    // A stale/invalid token (expired, or the backend's JWT secret rotated)
+    // self-heals here instead of leaving the customer stuck retrying a
+    // request that can never succeed.
+    if (res.status === 401) {
+      try {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+      } catch {
+        // Nothing to clean up if storage isn't available.
+      }
+      if (!window.location.pathname.startsWith("/verify")) window.location.href = "/verify";
+    }
     const message = body?.error?.message || `Request failed (${res.status})`;
     throw new ApiError(message, res.status, body?.error?.code, body?.error?.details);
   }

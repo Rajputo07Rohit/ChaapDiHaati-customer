@@ -6,7 +6,15 @@
   color-scheme: light;
 }
 
+:root.dark {
+  color-scheme: dark;
+}
+
 body {
   background: #fafaf9;
   -webkit-tap-highlight-color: transparent;
+}
+
+.dark body {
+  background: #1c1917;
 }

@@ -1,29 +1,24 @@
-import { createContext, ReactNode, useContext, useEffect, useState } from "react";
-import { setAuthToken } from "../api/client";
+import { createContext, ReactNode, useContext, useState } from "react";
 
-const STORAGE_KEY = "cdh_customer_auth";
+const STORAGE_KEY = "cdh_customer_session";
 
-interface StoredAuth {
+interface StoredSession {
   phone: string;
   token: string;
 }
 
 interface CustomerAuthContextValue {
   phone: string | null;
+  token: string | null;
   isVerified: boolean;
-  /**
-   * Mock verification — no Firebase wired up yet on either the frontend or
-   * backend (see backend/src/middleware/customerAuth.ts). This just
-   * unblocks the browse → cart → checkout UI for local testing; real order
-   * submission still needs a real Firebase ID token here once that's set up.
-   */
-  mockVerify: (phone: string) => void;
+  loading: boolean;
+  setSession: (phone: string, token: string) => void;
   signOut: () => void;
 }
 
 const CustomerAuthContext = createContext<CustomerAuthContextValue | null>(null);
 
-function loadStored(): StoredAuth | null {
+function loadStored(): StoredSession | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
@@ -33,24 +28,20 @@ function loadStored(): StoredAuth | null {
 }
 
 export function CustomerAuthProvider({ children }: { children: ReactNode }) {
-  const [auth, setAuth] = useState<StoredAuth | null>(loadStored);
+  const [session, setSessionState] = useState<StoredSession | null>(loadStored);
 
-  useEffect(() => {
-    setAuthToken(auth?.token ?? null);
-  }, [auth]);
-
-  function mockVerify(phone: string) {
-    const next = { phone, token: `mock.${phone}.${Date.now()}` };
-    setAuth(next);
+  function setSession(phone: string, token: string) {
+    const next = { phone, token };
+    setSessionState(next);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
-      // Best-effort persistence only — session still works without it.
+      // Best-effort persistence only — the session still works in-memory for this tab.
     }
   }
 
   function signOut() {
-    setAuth(null);
+    setSessionState(null);
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -59,7 +50,16 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <CustomerAuthContext.Provider value={{ phone: auth?.phone ?? null, isVerified: !!auth, mockVerify, signOut }}>
+    <CustomerAuthContext.Provider
+      value={{
+        phone: session?.phone ?? null,
+        token: session?.token ?? null,
+        isVerified: !!session,
+        loading: false,
+        setSession,
+        signOut,
+      }}
+    >
       {children}
     </CustomerAuthContext.Provider>
   );
