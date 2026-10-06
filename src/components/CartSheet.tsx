@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, LocateFixed, Tag, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { api, ApiError } from "../api/client";
-import { AppliedPromo, OrderRow } from "../api/types";
+import { AppliedPromo, MenuCategory, OrderRow } from "../api/types";
 import { CartLine, useCart } from "../context/CartContext";
 import { useCustomerAuth } from "../context/CustomerAuthContext";
 import { QuantityStepper } from "./QuantityStepper";
@@ -54,7 +55,12 @@ function getIdempotencyKey(signature: string): string {
 }
 
 export function CartSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { lines, setQuantity, removeItem, totalPaise, clear } = useCart();
+  const { lines, addItem, setQuantity, removeItem, totalPaise, clear } = useCart();
+  const { data: menuData } = useQuery({
+    queryKey: ["public-menu"],
+    queryFn: () => api.get<{ categories: MenuCategory[] }>("/public/menu"),
+  });
+  const extrasItems = menuData?.categories.find((c) => c.name === "Extras")?.items.filter((i) => i.status === "ACTIVE") ?? [];
   const { phone } = useCustomerAuth();
   const navigate = useNavigate();
 
@@ -345,6 +351,27 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {lines.length > 0 && extrasItems.length > 0 && (
+              <div className="mt-4 flex flex-wrap items-center gap-1.5">
+                <span className="shrink-0 text-xs text-stone-400">Quick add:</span>
+                {extrasItems.map((item) => {
+                  const price = item.prices.find((p) => p.price_type === "SINGLE") ?? item.prices[0];
+                  if (!price) return null;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() =>
+                        addItem({ menuItemId: item.id, name: item.name, priceType: price.price_type, unitPricePaise: price.price_paise, addons: [] }, 1)
+                      }
+                      className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-700 active:scale-95 dark:bg-stone-800 dark:text-stone-200"
+                    >
+                      + {item.name} ({formatRupees(price.price_paise)})
+                    </button>
+                  );
+                })}
               </div>
             )}
 
