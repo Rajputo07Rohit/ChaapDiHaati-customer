@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Moon, Search, Sun, SunMoon } from "lucide-react";
+import { Moon, Receipt, Search, Sun } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { MenuCategory } from "../api/types";
 import { useTheme } from "../context/ThemeContext";
@@ -9,35 +10,30 @@ import { ItemCard } from "../components/ItemCard";
 import { CartBar } from "../components/CartBar";
 import { CartSheet } from "../components/CartSheet";
 import { MenuSkeleton } from "../components/MenuSkeleton";
+import { OffersBanner } from "../components/OffersBanner";
+import { BannerCarousel } from "../components/BannerCarousel";
 import logo from "../assets/logo.png";
 
+/** A single, unambiguous light/dark switch — the previous 3-way
+ * System/Light/Dark segmented control put two moon-ish icons side by side
+ * (the "System" icon reads as a dim moon too), which read as two dark-mode
+ * buttons. One toggle, one icon, no ambiguity. */
 function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  const options = [
-    { value: "system" as const, icon: SunMoon, label: "System" },
-    { value: "light" as const, icon: Sun, label: "Light" },
-    { value: "dark" as const, icon: Moon, label: "Dark" },
-  ];
+  const { isDark, setTheme } = useTheme();
   return (
-    <div className="flex rounded-full bg-stone-100 p-0.5 dark:bg-stone-800">
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => setTheme(opt.value)}
-          aria-label={opt.label}
-          title={opt.label}
-          className={`grid h-7 w-7 place-items-center rounded-full transition ${
-            theme === opt.value ? "bg-white text-brand-600 shadow-sm dark:bg-stone-700 dark:text-brand-400" : "text-stone-400"
-          }`}
-        >
-          <opt.icon size={14} />
-        </button>
-      ))}
-    </div>
+    <button
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      className="grid h-8 w-8 place-items-center rounded-full bg-stone-100 text-stone-500 transition dark:bg-stone-800 dark:text-amber-400"
+    >
+      {isDark ? <Moon size={16} /> : <Sun size={16} />}
+    </button>
   );
 }
 
 export function Menu() {
+  const navigate = useNavigate();
   const { data, isLoading, isError } = useQuery({
     queryKey: ["public-menu"],
     queryFn: () => api.get<{ categories: MenuCategory[] }>("/public/menu"),
@@ -66,8 +62,21 @@ export function Menu() {
             <img src={logo} alt="" className="h-9 w-9 object-contain" />
             <p className="text-lg font-bold text-stone-900 dark:text-stone-100">Chaap Di Haati</p>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => navigate("/orders")}
+              aria-label="Your orders"
+              title="Your orders"
+              className="grid h-8 w-8 place-items-center rounded-full bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-400"
+            >
+              <Receipt size={16} />
+            </button>
+            <ThemeToggle />
+          </div>
         </div>
+
+        <BannerCarousel />
+        <OffersBanner />
 
         <div className="px-4 pb-3">
           <div className="flex items-center gap-2 rounded-full bg-stone-100 px-4 py-2 dark:bg-stone-800">

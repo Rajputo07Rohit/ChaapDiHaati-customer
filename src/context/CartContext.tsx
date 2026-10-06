@@ -3,13 +3,21 @@ import { PriceType } from "../api/types";
 
 const STORAGE_KEY = "cdh_cart";
 
+export interface CartLineAddon {
+  id: string;
+  name: string;
+  pricePaise: number;
+}
+
 export interface CartLine {
   menuItemId: string;
   name: string;
   priceType: PriceType;
+  /** The item's own price — selected add-ons are tracked separately below, not folded in here. */
   unitPricePaise: number;
   quantity: number;
-  /** Distinguishes e.g. the same item added as HALF vs FULL in the cart. */
+  addons: CartLineAddon[];
+  /** Distinguishes e.g. the same item added as HALF vs FULL, or with different add-ons selected, as separate cart lines. */
   key: string;
 }
 
@@ -51,7 +59,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }
 
   function addItem(item: Omit<CartLine, "key" | "quantity">, quantity: number) {
-    const key = `${item.menuItemId}:${item.priceType}`;
+    const addonKey = [...item.addons].map((a) => a.id).sort().join(",");
+    const key = `${item.menuItemId}:${item.priceType}:${addonKey}`;
     const existing = lines.find((l) => l.key === key);
     if (existing) {
       update(lines.map((l) => (l.key === key ? { ...l, quantity: l.quantity + quantity } : l)));
@@ -73,7 +82,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
     update([]);
   }
 
-  const totalPaise = useMemo(() => lines.reduce((sum, l) => sum + l.unitPricePaise * l.quantity, 0), [lines]);
+  const totalPaise = useMemo(
+    () => lines.reduce((sum, l) => sum + (l.unitPricePaise + l.addons.reduce((s, a) => s + a.pricePaise, 0)) * l.quantity, 0),
+    [lines]
+  );
   const itemCount = useMemo(() => lines.reduce((sum, l) => sum + l.quantity, 0), [lines]);
 
   return (

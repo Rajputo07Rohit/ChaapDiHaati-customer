@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, LocateFixed, Trash2, X } from "lucide-react";
+import { ArrowLeft, LocateFixed, Tag, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { api, ApiError } from "../api/client";
-import { OrderRow } from "../api/types";
-import { useCart } from "../context/CartContext";
+import { AppliedPromo, OrderRow } from "../api/types";
+import { CartLine, useCart } from "../context/CartContext";
 import { useCustomerAuth } from "../context/CustomerAuthContext";
 import { QuantityStepper } from "./QuantityStepper";
 
@@ -16,6 +16,13 @@ function formatRupees(paise: number): string {
   return `₹${(paise / 100).toFixed(paise % 100 === 0 ? 0 : 2)}`;
 }
 
+/** Unit price including this line's selected add-ons. */
+function lineUnitPaise(l: CartLine): number {
+  return l.unitPricePaise + l.addons.reduce((s, a) => s + a.pricePaise, 0);
+}
+
+const FREE_DELIVERY_THRESHOLD_PAISE = 15000;
+
 /**
  * Client-side mirror of the backend's tiers, for display only — the
  * backend recomputes this itself and is the only source that actually
@@ -23,8 +30,7 @@ function formatRupees(paise: number): string {
  */
 function estimateDeliveryFee(subtotalPaise: number): number {
   if (subtotalPaise < 10000) return 4000;
-  if (subtotalPaise < 15000) return 3000;
-  if (subtotalPaise < 20000) return 2000;
+  if (subtotalPaise < FREE_DELIVERY_THRESHOLD_PAISE) return 3000;
   return 0;
 }
 
@@ -64,14 +70,57 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   const [placing, setPlacing] = useState(false);
   const [showDeliveryReview, setShowDeliveryReview] = useState(false);
 
+  const [promoInput, setPromoInput] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null);
+  const [promoAppliedForSubtotal, setPromoAppliedForSubtotal] = useState<number | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [applyingPromo, setApplyingPromo] = useState(false);
+
+  // The cart changed since this code was applied (items/quantities edited) —
+  // the discount shown would be stale, and the backend would just re-reject
+  // or recompute it differently at order time. Drop it and ask again rather
+  // than show a number that won't match what's actually charged.
+  useEffect(() => {
+    if (appliedPromo && promoAppliedForSubtotal !== null && promoAppliedForSubtotal !== totalPaise) {
+      setAppliedPromo(null);
+      setPromoAppliedForSubtotal(null);
+      toast("Cart changed — please re-apply your coupon.", { icon: "ℹ️" });
+    }
+  }, [totalPaise, appliedPromo, promoAppliedForSubtotal]);
+
   if (!open) return null;
 
   const deliveryFee = orderType === "DELIVERY" ? estimateDeliveryFee(totalPaise) : 0;
-  const grandTotal = totalPaise + deliveryFee;
+  const discountPaise = appliedPromo?.discount_paise ?? 0;
+  const grandTotal = Math.max(0, totalPaise + deliveryFee - discountPaise);
+
+  async function applyPromo() {
+    const code = promoInput.trim();
+    if (!code) return;
+    setApplyingPromo(true);
+    setPromoError(null);
+    try {
+      const result = await api.post<AppliedPromo>("/public/promo-codes/validate", { code, subtotalPaise: totalPaise });
+      setAppliedPromo(result);
+      setPromoAppliedForSubtotal(totalPaise);
+      toast.success(`"${result.code}" applied`);
+    } catch (err) {
+      setPromoError(err instanceof ApiError ? err.message : "Could not apply this code.");
+    } finally {
+      setApplyingPromo(false);
+    }
+  }
+
+  function removePromo() {
+    setAppliedPromo(null);
+    setPromoAppliedForSubtotal(null);
+    setPromoInput("");
+    setPromoError(null);
+  }
 
   function handleProceed() {
     if (lines.length === 0) return;
-    if (orderType === "DELIVERY" && !customerName.trim()) {
+    if (!customerName.trim()) {
       setNameError("Please enter your name.");
       return;
     }
@@ -123,11 +172,13 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
         paymentProvider,
         ...razorpayDetails,
         notes: notes || undefined,
-        items: lines.map((l) => ({ menuItemId: l.menuItemId, priceType: l.priceType, quantity: l.quantity })),
+        items: lines.map((l) => ({ menuItemId: l.menuItemId, priceType: l.priceType, quantity: l.quantity, addonIds: l.addons.map((a) => a.id) })),
         idempotencyKey: getIdempotencyKey(signature),
+        promoCode: appliedPromo?.code,
       });
       clear();
       setCoords(null);
+      removePromo();
       sessionStorage.removeItem(IDEMPOTENCY_STORAGE_KEY);
       setShowDeliveryReview(false);
       onClose();
@@ -152,7 +203,8 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
         keyId: string;
       }>("/public/orders/razorpay-order", {
         orderType,
-        items: lines.map((l) => ({ menuItemId: l.menuItemId, priceType: l.priceType, quantity: l.quantity })),
+        items: lines.map((l) => ({ menuItemId: l.menuItemId, priceType: l.priceType, quantity: l.quantity, addonIds: l.addons.map((a) => a.id) })),
+        promoCode: appliedPromo?.code,
       });
 
       const razorpay = new window.Razorpay({
@@ -183,10 +235,10 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex flex-col justify-end">
+    <div className="fixed inset-0 z-30 flex flex-col items-center justify-end">
       <button aria-label="Close cart" onClick={onClose} className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
 
-      <div className="relative flex max-h-[85vh] flex-col rounded-t-3xl bg-white shadow-2xl dark:bg-stone-900">
+      <div className="relative flex w-full max-h-[85vh] flex-col rounded-t-3xl bg-white shadow-2xl dark:bg-stone-900 sm:max-w-md">
         <div className="flex items-center justify-between border-b border-stone-100 px-5 py-4 dark:border-stone-800">
           {showDeliveryReview ? (
             <button
@@ -211,9 +263,11 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
               {lines.map((l) => (
                 <div key={l.key} className="flex justify-between text-sm text-stone-600 dark:text-stone-300">
                   <span>
-                    {l.name} × {l.quantity}
+                    {l.name}
+                    {l.addons.length > 0 && <span className="text-stone-400"> ({l.addons.map((a) => a.name).join(", ")})</span>} ×{" "}
+                    {l.quantity}
                   </span>
-                  <span>{formatRupees(l.unitPricePaise * l.quantity)}</span>
+                  <span>{formatRupees(lineUnitPaise(l) * l.quantity)}</span>
                 </div>
               ))}
             </div>
@@ -226,6 +280,12 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                 <span>Delivery fee</span>
                 <span>{deliveryFee === 0 ? "Free" : formatRupees(deliveryFee)}</span>
               </div>
+              {appliedPromo && (
+                <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                  <span>Coupon ({appliedPromo.code})</span>
+                  <span>-{formatRupees(discountPaise)}</span>
+                </div>
+              )}
               <div className="flex justify-between pt-1 font-semibold text-stone-900 dark:text-stone-100">
                 <span>Total</span>
                 <span>{formatRupees(grandTotal)}</span>
@@ -271,8 +331,11 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                     <div>
                       <p className="font-medium text-stone-900 dark:text-stone-100">{l.name}</p>
                       <p className="text-xs text-stone-500 dark:text-stone-400">
-                        {l.priceType} · {formatRupees(l.unitPricePaise)}
+                        {l.priceType} · {formatRupees(lineUnitPaise(l))}
                       </p>
+                      {l.addons.length > 0 && (
+                        <p className="text-xs text-stone-400">+ {l.addons.map((a) => a.name).join(", ")}</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <QuantityStepper value={l.quantity} onChange={(q) => setQuantity(l.key, q)} />
@@ -295,7 +358,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                       setCustomerName(e.target.value);
                       setNameError(null);
                     }}
-                    placeholder={orderType === "DELIVERY" ? "Your name (required for delivery)" : "Your name (optional)"}
+                    placeholder="Your name"
                     className={`w-full rounded-xl border px-4 py-2.5 text-sm dark:bg-stone-800 dark:text-stone-100 ${
                       nameError ? "border-red-400" : "border-stone-200 dark:border-stone-700"
                     }`}
@@ -359,11 +422,56 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                         }`}
                       />
                       {addressError && <p className="mt-1 text-xs text-red-500">{addressError}</p>}
-                      <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
-                        Delivery fee: under ₹100 → ₹40 · ₹100–149 → ₹30 · ₹150–199 → ₹20 · ₹200+ → free
-                      </p>
+                      {deliveryFee > 0 ? (
+                        <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                          Delivery fee {formatRupees(deliveryFee)} · add{" "}
+                          {formatRupees(FREE_DELIVERY_THRESHOLD_PAISE - totalPaise)} more for free delivery
+                        </p>
+                      ) : (
+                        <p className="mt-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                          🎉 You've got free delivery on this order!
+                        </p>
+                      )}
                     </>
                   )}
+                </div>
+
+                <div>
+                  <p className="mb-2 text-sm font-medium text-stone-700 dark:text-stone-300">Coupon</p>
+                  {appliedPromo ? (
+                    <div className="flex items-center justify-between rounded-xl bg-emerald-50 px-4 py-2.5 dark:bg-emerald-900/30">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Tag size={14} className="text-emerald-600 dark:text-emerald-400" />
+                        <span className="font-semibold text-emerald-700 dark:text-emerald-400">{appliedPromo.code}</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">-{formatRupees(appliedPromo.discount_paise)}</span>
+                      </div>
+                      <button onClick={removePromo} className="text-xs font-semibold text-emerald-700 underline dark:text-emerald-400">
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        value={promoInput}
+                        onChange={(e) => {
+                          setPromoInput(e.target.value.toUpperCase());
+                          setPromoError(null);
+                        }}
+                        placeholder="Enter coupon code"
+                        className={`w-full rounded-xl border px-4 py-2.5 text-sm uppercase dark:bg-stone-800 dark:text-stone-100 ${
+                          promoError ? "border-red-400" : "border-stone-200 dark:border-stone-700"
+                        }`}
+                      />
+                      <button
+                        onClick={applyPromo}
+                        disabled={!promoInput.trim() || applyingPromo}
+                        className="shrink-0 rounded-xl bg-stone-800 px-4 text-sm font-semibold text-white disabled:opacity-50 dark:bg-stone-700"
+                      >
+                        {applyingPromo ? "…" : "Apply"}
+                      </button>
+                    </div>
+                  )}
+                  {promoError && <p className="mt-1 text-xs text-red-500">{promoError}</p>}
                 </div>
 
                 <textarea
@@ -389,6 +497,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
             <div className="mb-2 flex items-center justify-between px-1">
               <span className="text-sm text-stone-500 dark:text-stone-400">
                 {orderType === "DELIVERY" ? "Total (incl. delivery)" : "Total"}
+                {appliedPromo && <span className="ml-1.5 text-emerald-600 dark:text-emerald-400">· saved {formatRupees(discountPaise)}</span>}
               </span>
               <span className="text-lg font-bold text-stone-900 dark:text-stone-100">{formatRupees(grandTotal)}</span>
             </div>

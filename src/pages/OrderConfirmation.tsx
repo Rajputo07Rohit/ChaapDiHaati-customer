@@ -21,6 +21,11 @@ export function OrderConfirmation() {
         <>
           <p className="mt-1 text-stone-500 dark:text-stone-400">Order #{order.order_number}</p>
           <p className="mt-4 text-3xl font-bold text-stone-900 dark:text-stone-100">{formatRupees(order.net_total_paise)}</p>
+          {order.discount_paise > 0 && (
+            <p className="mt-1 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+              You saved {formatRupees(order.discount_paise)} with your coupon
+            </p>
+          )}
         </>
       ) : (
         <p className="mt-1 text-stone-500 dark:text-stone-400">Order #{id}</p>

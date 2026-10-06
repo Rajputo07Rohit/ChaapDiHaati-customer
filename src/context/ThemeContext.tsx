@@ -7,6 +7,8 @@ const STORAGE_KEY = "cdh_theme";
 interface ThemeContextValue {
   theme: ThemePreference;
   setTheme: (theme: ThemePreference) => void;
+  /** The actually-rendered light/dark state, with "system" already resolved — what a toggle button should read/flip. */
+  isDark: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -30,11 +32,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   });
 
+  const [isDark, setIsDark] = useState(() => resolveIsDark(theme));
+
   useEffect(() => {
     applyTheme(theme);
+    setIsDark(resolveIsDark(theme));
     if (theme !== "system") return;
     const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => applyTheme("system");
+    const onChange = () => {
+      applyTheme("system");
+      setIsDark(resolveIsDark("system"));
+    };
     media.addEventListener("change", onChange);
     return () => media.removeEventListener("change", onChange);
   }, [theme]);
@@ -48,7 +56,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ theme, setTheme, isDark }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {
