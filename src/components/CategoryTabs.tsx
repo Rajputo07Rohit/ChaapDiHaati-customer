@@ -8,7 +8,7 @@ export function CategoryTabs({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="flex gap-2 overflow-x-auto px-4 pb-3 pt-1 [-ms-overflow-style:none] [scrollbar-width:none] md:flex-wrap md:overflow-visible lg:px-8 [&::-webkit-scrollbar]:hidden">
+    <div className="flex flex-wrap gap-2 px-4 pb-3 pt-1 lg:px-8">
       {categories.map((cat) => (
         <button
           key={cat.id}
