@@ -36,7 +36,10 @@ const CartContext = createContext<CartContextValue | null>(null);
 function loadStored(): CartLine[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    // Carts saved before add-ons existed have no `addons` field.
+    return parsed.map((l) => ({ ...l, addons: Array.isArray(l.addons) ? l.addons : [] }));
   } catch {
     return [];
   }
