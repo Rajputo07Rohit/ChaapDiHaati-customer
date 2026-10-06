@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Menu } from "./pages/Menu";
 import { Verify } from "./pages/Verify";
 import { OrderConfirmation } from "./pages/OrderConfirmation";
@@ -20,9 +20,11 @@ function RequireCustomerAuth({ children }: { children: JSX.Element }) {
  * across a 1440px window, which is what every page looked like without it.
  */
 export default function App() {
+  // The menu is a browsing grid and uses the full desktop width; the other pages are single-column forms/receipts and stay phone-width.
+  const wide = useLocation().pathname.startsWith("/menu");
   return (
     <div className="min-h-screen bg-stone-200 dark:bg-stone-900 sm:flex sm:justify-center">
-      <div className="w-full sm:max-w-md sm:shadow-2xl">
+      <div className={`w-full sm:shadow-2xl ${wide ? "sm:max-w-3xl lg:max-w-6xl" : "sm:max-w-md"}`}>
         <Routes>
           <Route path="/verify" element={<Verify />} />
           <Route

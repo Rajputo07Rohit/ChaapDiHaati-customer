@@ -24,7 +24,7 @@ export function OffersBanner() {
   if (offers.length === 0) return null;
 
   return (
-    <div className="flex gap-2.5 overflow-x-auto px-4 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex gap-2.5 overflow-x-auto px-4 pb-3 lg:px-8 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {offers.map((o) => (
         <div
           key={o.code}

@@ -56,8 +56,8 @@ export function Menu() {
 
   return (
     <div className="min-h-screen bg-stone-50 pb-28 dark:bg-stone-950">
-      <header className="sticky top-0 z-10 bg-white/95 shadow-sm backdrop-blur dark:bg-stone-900/95">
-        <div className="flex items-center justify-between px-4 py-3">
+      <header className="bg-white dark:bg-stone-900">
+        <div className="flex items-center justify-between px-4 py-3 lg:px-8">
           <div className="flex items-center gap-2">
             <img src={logo} alt="" className="h-9 w-9 object-contain" />
             <p className="text-lg font-bold text-stone-900 dark:text-stone-100">Chaap Di Haati</p>
@@ -77,8 +77,10 @@ export function Menu() {
 
         <BannerCarousel />
         <OffersBanner />
+      </header>
 
-        <div className="px-4 pb-3">
+      <div className="sticky top-0 z-10 bg-white/95 shadow-sm backdrop-blur dark:bg-stone-900/95">
+        <div className="px-4 py-3 lg:px-8">
           <div className="flex items-center gap-2 rounded-full bg-stone-100 px-4 py-2 dark:bg-stone-800">
             <Search size={16} className="text-stone-400" />
             <input
@@ -93,14 +95,14 @@ export function Menu() {
         {!query && categories.length > 0 && (
           <CategoryTabs categories={categories} active={activeCategory} onSelect={setActiveCategory} />
         )}
-      </header>
+      </div>
 
-      <main className="px-4 py-4">
+      <main className="px-4 py-4 lg:px-8 lg:py-6">
         {isLoading && <MenuSkeleton />}
         {isError && <p className="mt-8 text-center text-red-500">Couldn't load the menu. Please try again.</p>}
 
         {!isLoading && query && (
-          <div className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 lg:gap-4">
             {searchResults!.length === 0 ? (
               <p className="mt-8 text-center text-stone-400">No items match "{search}".</p>
             ) : (
@@ -110,7 +112,7 @@ export function Menu() {
         )}
 
         {!isLoading && !query && current && (
-          <div className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 lg:gap-4">
             {current.items.map((item) => (
               <ItemCard key={item.id} item={item} />
             ))}

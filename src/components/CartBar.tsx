@@ -15,7 +15,7 @@ export function CartBar({ onOpen }: { onOpen: () => void }) {
       <button
         type="button"
         onClick={onOpen}
-        className="flex w-full max-w-md items-center justify-between rounded-2xl bg-brand-600 px-5 py-3.5 text-white shadow-lg active:scale-[0.99]"
+        className="flex w-full max-w-md lg:max-w-xl items-center justify-between rounded-2xl bg-brand-600 px-5 py-3.5 text-white shadow-lg active:scale-[0.99]"
       >
         <span className="flex items-center gap-2 font-semibold">
           <ShoppingBag size={18} />

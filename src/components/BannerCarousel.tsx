@@ -59,7 +59,7 @@ export function BannerCarousel() {
   }
 
   return (
-    <div className="px-4 pb-4">
+    <div className="px-4 pb-4 lg:px-8">
       <div
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -81,7 +81,7 @@ export function BannerCarousel() {
               <img
                 src={b.image_url}
                 alt={b.title ?? ""}
-                className="h-48 w-full object-cover sm:h-60"
+                className="h-48 w-full object-cover sm:h-64 lg:h-80"
                 loading="lazy"
               />
               {b.title && (
