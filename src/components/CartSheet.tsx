@@ -241,10 +241,10 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex flex-col items-center justify-end">
+    <div className="fixed inset-0 z-30 flex flex-col items-center justify-end sm:justify-center sm:p-4">
       <button aria-label="Close cart" onClick={onClose} className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
 
-      <div className="relative flex w-full max-h-[85vh] flex-col rounded-t-3xl bg-white shadow-2xl dark:bg-stone-900 sm:max-w-md">
+      <div className="relative flex w-full max-h-[85vh] flex-col rounded-t-3xl bg-white shadow-2xl dark:bg-stone-900 sm:max-w-md sm:rounded-3xl">
         <div className="flex items-center justify-between border-b border-stone-100 px-5 py-4 dark:border-stone-800">
           {showDeliveryReview ? (
             <button

@@ -21,10 +21,17 @@ function RequireCustomerAuth({ children }: { children: JSX.Element }) {
  */
 export default function App() {
   // The menu is a browsing grid and uses the full desktop width; the other pages are single-column forms/receipts and stay phone-width.
-  const wide = useLocation().pathname.startsWith("/menu");
+  const { pathname } = useLocation();
+  const wide = pathname.startsWith("/menu");
+  // The login screen is a full-bleed split layout (brand panel + form) on laptops.
+  const fullBleed = pathname.startsWith("/verify");
   return (
     <div className="min-h-screen bg-stone-200 dark:bg-stone-900 sm:flex sm:justify-center">
-      <div className={`w-full sm:shadow-2xl ${wide ? "sm:max-w-3xl lg:max-w-6xl" : "sm:max-w-md"}`}>
+      <div
+        className={`w-full ${
+          fullBleed ? "" : `sm:shadow-2xl ${wide ? "sm:max-w-3xl lg:max-w-6xl xl:max-w-7xl" : "sm:max-w-md"}`
+        }`}
+      >
         <Routes>
           <Route path="/verify" element={<Verify />} />
           <Route

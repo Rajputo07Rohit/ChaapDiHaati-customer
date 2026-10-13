@@ -59,8 +59,8 @@ export function Menu() {
       <header className="bg-white dark:bg-stone-900">
         <div className="flex items-center justify-between px-4 py-3 lg:px-8">
           <div className="flex items-center gap-2">
-            <img src={logo} alt="" className="h-9 w-9 object-contain" />
-            <p className="text-lg font-bold text-stone-900 dark:text-stone-100">Chaap Di Haati</p>
+            <img src={logo} alt="" className="h-9 w-9 object-contain lg:h-11 lg:w-11" />
+            <p className="text-lg font-bold lg:text-2xl text-stone-900 dark:text-stone-100">Chaap Di Haati</p>
           </div>
           <div className="flex items-center gap-1.5">
             <button
@@ -102,7 +102,7 @@ export function Menu() {
         {isError && <p className="mt-8 text-center text-red-500">Couldn't load the menu. Please try again.</p>}
 
         {!isLoading && query && (
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 lg:gap-4">
+          <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
             {searchResults!.length === 0 ? (
               <p className="mt-8 text-center text-stone-400">No items match "{search}".</p>
             ) : (
@@ -112,7 +112,7 @@ export function Menu() {
         )}
 
         {!isLoading && !query && current && (
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 lg:gap-4">
+          <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
             {current.items.map((item) => (
               <ItemCard key={item.id} item={item} />
             ))}

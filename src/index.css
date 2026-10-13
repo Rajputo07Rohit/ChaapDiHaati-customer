@@ -18,3 +18,61 @@ body {
 .dark body {
   background: #1c1917;
 }
+
+/* ---------- Login brand animation ---------- */
+@keyframes cdh-float {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-12px) rotate(2deg); }
+}
+@keyframes cdh-pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.55; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+@keyframes cdh-letter-in {
+  0% { opacity: 0; transform: translateY(0.7em) scale(0.8); filter: blur(4px); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+@keyframes cdh-wave {
+  0%, 100% { color: #fff; text-shadow: 0 0 0 transparent; }
+  50% { color: #fdba74; text-shadow: 0 0 18px rgba(251, 146, 60, 0.8); }
+}
+@keyframes cdh-ember {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  15% { opacity: 0.9; }
+  100% { transform: translateY(-110vh) translateX(var(--drift, 20px)) scale(1.1); opacity: 0; }
+}
+@keyframes cdh-rise {
+  0% { opacity: 0; transform: translateY(24px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes cdh-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.18) rotate(-6deg); }
+  100% { transform: scale(1); }
+}
+
+.cdh-float { animation: cdh-float 5s ease-in-out infinite; }
+.cdh-ring { animation: cdh-pulse-ring 3s ease-out infinite; }
+.cdh-letter {
+  display: inline-block;
+  color: #fff;
+  opacity: 0;
+  animation: cdh-letter-in 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards, cdh-wave 3.5s ease-in-out 1.5s infinite;
+}
+.cdh-ember {
+  position: absolute;
+  bottom: -20px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, #fdba74, #ea580c 70%, transparent);
+  animation: cdh-ember linear infinite;
+  pointer-events: none;
+}
+.cdh-rise { animation: cdh-rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.cdh-pop { animation: cdh-pop 0.5s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cdh-float, .cdh-ring, .cdh-ember, .cdh-pop { animation: none; }
+  .cdh-letter { animation: cdh-letter-in 0.01s forwards; }
+  .cdh-rise { animation-duration: 0.01s; animation-delay: 0s !important; }
+  .cdh-ember { display: none; }
+}

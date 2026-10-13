@@ -46,9 +46,9 @@ function AddonPickerSheet({
   const unitTotal = variant.pricePaise + selected.reduce((s, a) => s + a.price_paise, 0);
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col items-center justify-end">
+    <div className="fixed inset-0 z-40 flex flex-col items-center justify-end sm:justify-center sm:p-4">
       <button aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
-      <div className="relative flex w-full max-h-[80vh] flex-col rounded-t-3xl bg-white shadow-2xl dark:bg-stone-900 sm:max-w-md">
+      <div className="relative flex w-full max-h-[80vh] flex-col rounded-t-3xl bg-white shadow-2xl dark:bg-stone-900 sm:max-w-md sm:rounded-3xl">
         <div className="flex items-center justify-between border-b border-stone-100 px-5 py-4 dark:border-stone-800">
           <div>
             <h2 className="font-semibold text-stone-900 dark:text-stone-100">{itemName}</h2>
@@ -121,7 +121,7 @@ export function ItemCard({ item }: { item: MenuItemRow }) {
 
   return (
     <div
-      className={`flex gap-3 rounded-2xl border p-3 shadow-sm ${
+      className={`flex gap-3 rounded-2xl border p-3 shadow-sm transition sm:flex-col sm:gap-0 sm:p-0 sm:hover:-translate-y-0.5 sm:hover:shadow-md sm:overflow-hidden ${
         isAvailable
           ? "border-stone-200 bg-white dark:border-stone-700 dark:bg-stone-800"
           : "border-stone-200 bg-stone-50 opacity-70 dark:border-stone-700 dark:bg-stone-800/50"
@@ -131,16 +131,16 @@ export function ItemCard({ item }: { item: MenuItemRow }) {
         <img
           src={item.image_url}
           alt=""
-          className="h-16 w-16 shrink-0 rounded-xl object-cover"
+          className="h-16 w-16 shrink-0 rounded-xl object-cover sm:h-44 sm:w-full sm:rounded-none lg:h-48"
           loading="lazy"
         />
       ) : (
-        <div className="grid h-16 w-16 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-500 dark:bg-stone-700 dark:text-brand-400">
+        <div className="grid h-16 w-16 shrink-0 place-items-center rounded-xl sm:h-44 sm:w-full sm:rounded-none bg-brand-50 text-brand-500 dark:bg-stone-700 dark:text-brand-400">
           <UtensilsCrossed size={22} />
         </div>
       )}
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 sm:p-4">
         <div className="flex items-center justify-between gap-2">
           <h3 className="font-semibold text-stone-900 dark:text-stone-100">{item.name}</h3>
           {!isAvailable && (
