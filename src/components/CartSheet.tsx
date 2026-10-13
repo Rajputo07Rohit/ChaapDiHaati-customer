@@ -60,7 +60,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
     queryKey: ["public-menu"],
     queryFn: () => api.get<{ categories: MenuCategory[] }>("/public/menu"),
   });
-  const extrasItems = menuData?.categories.find((c) => c.name === "Extras")?.items.filter((i) => i.status === "ACTIVE") ?? [];
+  const extrasItems = menuData?.categories.find((c) => c.name === "Extras")?.items.filter((i) => i.status === "ACTIVE" && !/delivery/i.test(i.name)) ?? [];
   const { phone } = useCustomerAuth();
   const navigate = useNavigate();
 
@@ -423,6 +423,9 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                   )}
                   {orderType === "DELIVERY" && (
                     <>
+                      <p className="mt-2 rounded-xl bg-brand-50 px-3 py-2 text-xs font-bold text-brand-700 dark:bg-stone-800 dark:text-brand-400">
+                        ⏱ Preparing takes about 15 min, and delivery takes about 15 min more. Your order should reach you in around 30 min.
+                      </p>
                       <button
                         type="button"
                         onClick={shareLocation}

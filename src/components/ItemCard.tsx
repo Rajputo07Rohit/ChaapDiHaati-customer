@@ -123,7 +123,7 @@ export function ItemCard({ item }: { item: MenuItemRow }) {
     <div
       className={`flex gap-3 rounded-2xl border p-3 shadow-sm transition sm:flex-col sm:gap-0 sm:p-0 sm:hover:-translate-y-0.5 sm:hover:shadow-md sm:overflow-hidden ${
         isAvailable
-          ? "border-stone-200 bg-white dark:border-stone-700 dark:bg-stone-800"
+          ? "border-stone-300 bg-stone-100 dark:border-stone-700 dark:bg-stone-800"
           : "border-stone-200 bg-stone-50 opacity-70 dark:border-stone-700 dark:bg-stone-800/50"
       }`}
     >

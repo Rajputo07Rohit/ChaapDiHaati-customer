@@ -55,7 +55,7 @@ export function Menu() {
   const current = categories.find((c) => c.id === activeCategory);
 
   return (
-    <div className="min-h-screen bg-stone-50 pb-28 dark:bg-stone-950">
+    <div className="min-h-screen bg-white pb-28 dark:bg-stone-950">
       <header className="bg-white dark:bg-stone-900">
         <div className="flex items-center justify-between px-4 py-3 lg:px-8">
           <div className="flex items-center gap-2">
@@ -77,6 +77,9 @@ export function Menu() {
 
         <BannerCarousel />
         <OffersBanner />
+        <p className="mx-4 mb-3 rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-700 dark:bg-stone-800 dark:text-brand-400 lg:mx-8">
+          ⏱ Preparation takes about 15 min. Delivery orders take about 15 min more.
+        </p>
       </header>
 
       <div className="sticky top-0 z-10 bg-white/95 shadow-sm backdrop-blur dark:bg-stone-900/95">

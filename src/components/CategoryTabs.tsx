@@ -8,7 +8,7 @@ export function CategoryTabs({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="flex gap-2 overflow-x-auto px-4 pb-3 pt-1 lg:flex-wrap lg:overflow-visible lg:px-8 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex flex-wrap gap-2 px-4 pb-3 pt-1 lg:px-8">
       {categories.map((cat) => (
         <button
           key={cat.id}
@@ -17,7 +17,7 @@ export function CategoryTabs({
           className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition ${
             active === cat.id
               ? "bg-brand-600 text-white"
-              : "border border-stone-200 bg-white text-stone-600 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300"
+              : "border border-stone-300 bg-stone-100 text-stone-600 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300"
           }`}
         >
           {cat.name}
