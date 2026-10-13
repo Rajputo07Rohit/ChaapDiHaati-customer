@@ -51,6 +51,9 @@ export interface OrderRow {
   cancel_reason: string | null;
   notes: string | null;
   created_at: string;
+  confirmed_at: string | null;
+  /** Prep-time estimate (minutes) staff chose when accepting. */
+  prep_time_minutes: number | null;
 }
 
 export interface OrderHistoryItem {
