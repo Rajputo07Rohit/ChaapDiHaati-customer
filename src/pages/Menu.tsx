@@ -12,6 +12,7 @@ import { CartSheet } from "../components/CartSheet";
 import { MenuSkeleton } from "../components/MenuSkeleton";
 import { OffersBanner } from "../components/OffersBanner";
 import { BannerCarousel } from "../components/BannerCarousel";
+import { StoreStatusBanner } from "../components/StoreClosedBanner";
 import logo from "../assets/logo.png";
 
 /** A single, unambiguous light/dark switch — the previous 3-way
@@ -77,6 +78,7 @@ export function Menu() {
 
         <BannerCarousel />
         <OffersBanner />
+        <StoreStatusBanner />
         <p className="mx-4 mb-3 rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-700 dark:bg-stone-800 dark:text-brand-400 lg:mx-8">
           ⏱ Preparation takes about 15 min. Delivery orders take about 15 min more.
         </p>

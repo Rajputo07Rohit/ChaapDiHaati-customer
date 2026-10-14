@@ -2,6 +2,7 @@ import { useState } from "react";
 import { UtensilsCrossed, X } from "lucide-react";
 import { MenuItemAddonRow, MenuItemRow, PriceType } from "../api/types";
 import { useCart } from "../context/CartContext";
+import { useStoreStatus } from "../hooks";
 import { QuantityStepper } from "./QuantityStepper";
 
 function formatRupees(paise: number): string {
@@ -100,6 +101,7 @@ function AddonPickerSheet({
 export function ItemCard({ item }: { item: MenuItemRow }) {
   const { lines, addItem, setQuantity } = useCart();
   const isAvailable = item.status === "ACTIVE";
+  const { isOpen: storeOpen } = useStoreStatus();
   const [pickingVariant, setPickingVariant] = useState<Variant | null>(null);
   const activeAddons = item.addons.filter((a) => a.active);
 
@@ -166,7 +168,9 @@ export function ItemCard({ item }: { item: MenuItemRow }) {
                   {v.label}{" "}
                   <span className="ml-2 font-medium text-stone-800 dark:text-stone-200">{formatRupees(v.pricePaise)}</span>
                 </div>
-                {!isAvailable ? null : activeAddons.length > 0 ? (
+                {!isAvailable ? null : !storeOpen ? (
+                  <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-medium text-stone-500 dark:bg-stone-700 dark:text-stone-400">Closed</span>
+                ) : activeAddons.length > 0 ? (
                   <div className="flex items-center gap-2">
                     {addonCartQty > 0 && <span className="text-xs font-semibold text-stone-500 dark:text-stone-400">× {addonCartQty} in cart</span>}
                     <button

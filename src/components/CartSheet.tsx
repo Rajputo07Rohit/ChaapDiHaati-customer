@@ -5,6 +5,7 @@ import { ArrowLeft, LocateFixed, Tag, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { api, ApiError } from "../api/client";
 import { AppliedPromo, MenuCategory, OrderRow } from "../api/types";
+import { rumaliNeedsMain, useStoreStatus } from "../hooks";
 import { CartLine, useCart } from "../context/CartContext";
 import { useCustomerAuth } from "../context/CustomerAuthContext";
 import { QuantityStepper } from "./QuantityStepper";
@@ -62,6 +63,11 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   });
   const extrasItems = menuData?.categories.find((c) => c.name === "Extras")?.items.filter((i) => i.status === "ACTIVE" && !/delivery/i.test(i.name)) ?? [];
   const { phone } = useCustomerAuth();
+  const store = useStoreStatus();
+  const categoryOf = new Map<string, string>();
+  for (const c of menuData?.categories ?? []) for (const i of c.items) categoryOf.set(i.id, c.name);
+  const rumaliOnly = rumaliNeedsMain(lines, categoryOf);
+  const blocked = !store.isOpen || rumaliOnly;
   const navigate = useNavigate();
 
   const [orderType, setOrderType] = useState<OrderType>("TAKEAWAY");
@@ -125,7 +131,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   }
 
   function handleProceed() {
-    if (lines.length === 0) return;
+    if (lines.length === 0 || blocked) return;
     if (!customerName.trim()) {
       setNameError("Please enter your name.");
       return;
@@ -301,21 +307,21 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
             <div className="mt-5 space-y-2">
               <button
                 onClick={() => placeOrder("COD")}
-                disabled={placing}
+                disabled={placing || blocked}
                 className="w-full rounded-2xl bg-brand-600 py-3.5 font-semibold text-white disabled:opacity-60"
               >
                 {placing ? "Placing order…" : "Cash on Delivery"}
               </button>
               <button
                 onClick={payWithRazorpay}
-                disabled={placing}
+                disabled={placing || blocked}
                 className="w-full rounded-2xl border border-stone-200 py-3.5 font-semibold text-stone-700 disabled:opacity-60 dark:border-stone-700 dark:text-stone-200"
               >
                 {placing ? "Please wait…" : `Pay ${formatRupees(grandTotal)} with Razorpay (Test Mode)`}
               </button>
               <button
                 onClick={() => placeOrder("MOCK")}
-                disabled={placing}
+                disabled={placing || blocked}
                 className="w-full rounded-2xl border border-stone-200 py-3 text-sm font-medium text-stone-500 disabled:opacity-60 dark:border-stone-700 dark:text-stone-400"
               >
                 {placing ? "Placing order…" : "Pay Online — mock (skip gateway)"}
@@ -524,6 +530,16 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
 
         {lines.length > 0 && !showDeliveryReview && (
           <div className="border-t border-stone-100 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:border-stone-800">
+            {!store.isOpen && (
+              <p className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-900/20 dark:text-rose-300">
+                {store.message}
+              </p>
+            )}
+            {store.isOpen && rumaliOnly && (
+              <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                Rumali roti needs a Soya, Paneer or Mushroom Tandoori or Momo in your order — add one to continue.
+              </p>
+            )}
             <div className="mb-2 flex items-center justify-between px-1">
               <span className="text-sm text-stone-500 dark:text-stone-400">
                 {orderType === "DELIVERY" ? "Total (incl. delivery)" : "Total"}
@@ -533,10 +549,10 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
             </div>
             <button
               onClick={handleProceed}
-              disabled={placing}
+              disabled={placing || blocked}
               className="w-full rounded-2xl bg-brand-600 py-3.5 font-semibold text-white disabled:opacity-60"
             >
-              {placing ? "Placing order…" : "Place order"}
+              {placing ? "Placing order…" : !store.isOpen ? "Store is closed" : "Place order"}
             </button>
           </div>
         )}
