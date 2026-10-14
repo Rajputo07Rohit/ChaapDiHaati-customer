@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ReadyTimer } from "../components/ReadyTimer";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ChevronRight, Package } from "lucide-react";
@@ -56,6 +57,9 @@ function OrderDetailSheet({ orderId, onClose }: { orderId: string; onClose: () =
               <div className="flex items-center justify-between">
                 <StatusBadge status={order.status} />
                 <span className="text-xs text-stone-500 dark:text-stone-400">{formatDate(order.created_at)}</span>
+              </div>
+              <div className="flex justify-center">
+                <ReadyTimer order={order} />
               </div>
               {order.delivery_address && (
                 <p className="text-sm text-stone-600 dark:text-stone-300">{order.delivery_address}</p>

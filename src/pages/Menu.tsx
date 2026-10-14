@@ -12,7 +12,7 @@ import { CartSheet } from "../components/CartSheet";
 import { MenuSkeleton } from "../components/MenuSkeleton";
 import { OffersBanner } from "../components/OffersBanner";
 import { BannerCarousel } from "../components/BannerCarousel";
-import { StoreStatusBanner } from "../components/StoreClosedBanner";
+import { StoreClosedStrip, StoreStatusBanner, StoreStatusChip } from "../components/StoreClosedBanner";
 import logo from "../assets/logo.png";
 
 /** A single, unambiguous light/dark switch — the previous 3-way
@@ -61,7 +61,10 @@ export function Menu() {
         <div className="flex items-center justify-between px-4 py-3 lg:px-8">
           <div className="flex items-center gap-2">
             <img src={logo} alt="" className="h-9 w-9 object-contain lg:h-11 lg:w-11" />
-            <p className="text-lg font-bold lg:text-2xl text-stone-900 dark:text-stone-100">Chaap Di Haati</p>
+            <div>
+              <p className="text-lg font-bold leading-tight lg:text-2xl text-stone-900 dark:text-stone-100">Chaap Di Haati</p>
+              <StoreStatusChip />
+            </div>
           </div>
           <div className="flex items-center gap-1.5">
             <button
@@ -85,6 +88,7 @@ export function Menu() {
       </header>
 
       <div className="sticky top-0 z-10 bg-white/95 shadow-sm backdrop-blur dark:bg-stone-900/95">
+        <StoreClosedStrip />
         <div className="px-4 py-3 lg:px-8">
           <div className="flex items-center gap-2 rounded-full bg-stone-100 px-4 py-2 dark:bg-stone-800">
             <Search size={16} className="text-stone-400" />

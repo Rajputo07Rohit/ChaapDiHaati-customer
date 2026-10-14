@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Flame, Truck } from "lucide-react";
 import { api } from "../api/client";
 
 interface Banner {
@@ -20,7 +21,10 @@ export function BannerCarousel() {
     queryKey: ["active-banners"],
     queryFn: () => api.get<{ banners: Banner[] }>("/public/banners/active"),
   });
-  const banners = data?.banners ?? [];
+  // A slide whose image fails to load (deleted file, bad URL) is dropped
+  // rather than leaving a blank grey block in the carousel.
+  const [failed, setFailed] = useState<Set<string>>(new Set());
+  const banners = (data?.banners ?? []).filter((b) => !failed.has(b.id));
 
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -33,7 +37,7 @@ export function BannerCarousel() {
     return () => clearInterval(timer);
   }, [banners.length, paused]);
 
-  if (banners.length === 0) return null;
+  if (banners.length === 0) return data ? <DefaultHero /> : null;
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX;
@@ -83,6 +87,7 @@ export function BannerCarousel() {
                 alt={b.title ?? ""}
                 className="h-48 w-full object-cover sm:h-64 lg:h-80"
                 loading="lazy"
+                onError={() => setFailed((prev) => new Set(prev).add(b.id))}
               />
               {b.title && (
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent px-5 pb-4 pt-10">
@@ -107,6 +112,28 @@ export function BannerCarousel() {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Shown when no admin banner is active, so the top of the menu is never an
+ * empty gap. Only states things that are always true (the delivery-fee
+ * tiers live in the backend: free from ₹150). */
+function DefaultHero() {
+  return (
+    <div className="px-4 pb-4 lg:px-8">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 via-brand-500 to-amber-400 p-5 text-white shadow-lg shadow-brand-600/20 sm:p-7">
+        <div className="pointer-events-none absolute -right-6 -top-6 h-32 w-32 rounded-full bg-white/10" />
+        <div className="pointer-events-none absolute -bottom-10 right-10 h-24 w-24 rounded-full bg-white/10" />
+        <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-white/90">
+          <Flame size={14} /> Fresh from the tandoor
+        </p>
+        <h2 className="mt-1.5 text-2xl font-extrabold leading-tight sm:text-3xl">Smoky chaap, made to order</h2>
+        <p className="mt-1 max-w-sm text-sm text-white/90">Hot off the grill, straight to your plate or your door.</p>
+        <p className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/20 px-3.5 py-1.5 text-sm font-semibold backdrop-blur">
+          <Truck size={15} /> Free delivery on orders ₹150+
+        </p>
       </div>
     </div>
   );

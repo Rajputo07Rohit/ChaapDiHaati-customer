@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Clock, XCircle } from "lucide-react";
 import { api } from "../api/client";
 import { OrderRow } from "../api/types";
+import { ReadyTimer } from "../components/ReadyTimer";
 import logo from "../assets/logo.png";
 
 function formatRupees(paise: number): string {
@@ -57,7 +58,7 @@ export function OrderConfirmation() {
     Icon = CheckCircle2;
     iconClass = "text-brand-600";
     headline = "Order accepted!";
-    sub = order?.prep_time_minutes ? `Ready in about ${order.prep_time_minutes} min` : "The kitchen is on it.";
+    sub = "The kitchen is on it.";
     if (status === "OUT_FOR_DELIVERY") {
       headline = "Out for delivery";
       sub = "Your order is on the way.";
@@ -74,6 +75,7 @@ export function OrderConfirmation() {
       <h1 className="mt-4 text-2xl font-bold text-stone-900 dark:text-stone-100">{headline}</h1>
       {order && <p className="mt-1 text-stone-500 dark:text-stone-400">Order #{order.order_number}</p>}
       <p className="mt-2 max-w-xs text-sm text-stone-600 dark:text-stone-300">{sub}</p>
+      {order && <ReadyTimer order={order} />}
       {order && (
         <>
           <p className="mt-4 text-3xl font-bold text-stone-900 dark:text-stone-100">{formatRupees(order.net_total_paise)}</p>
