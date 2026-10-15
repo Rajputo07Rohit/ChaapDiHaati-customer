@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { ReadyTimer } from "../components/ReadyTimer";
+import { useReviewUrl } from "../components/ReviewPrompt";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Package } from "lucide-react";
+import { ArrowLeft, ChevronRight, Package, Star } from "lucide-react";
 import { api } from "../api/client";
 import { OrderDetailRow, OrderRow } from "../api/types";
 
@@ -37,6 +38,7 @@ function OrderDetailSheet({ orderId, onClose }: { orderId: string; onClose: () =
     queryFn: () => api.get<{ order: OrderDetailRow }>(`/public/orders/${orderId}`),
   });
   const order = data?.order;
+  const reviewUrl = useReviewUrl();
 
   return (
     <div className="fixed inset-0 z-30 flex flex-col items-center justify-end sm:justify-center sm:p-4">
@@ -109,6 +111,16 @@ function OrderDetailSheet({ orderId, onClose }: { orderId: string; onClose: () =
                   <span>{formatRupees(order.net_total_paise)}</span>
                 </div>
               </div>
+              {(order.status === "COMPLETED" || order.status === "DELIVERED") && reviewUrl && (
+                <a
+                  href={reviewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-2 rounded-2xl bg-amber-50 py-3 text-sm font-semibold text-amber-800 ring-1 ring-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:ring-amber-800/60"
+                >
+                  <Star size={16} className="fill-amber-400 text-amber-400" /> Rate us on Google
+                </a>
+              )}
             </div>
           )}
         </div>
@@ -130,14 +142,14 @@ export function OrderHistory() {
 
   return (
     <div className="min-h-screen bg-stone-50 pb-10 dark:bg-stone-950">
-      <header className="sticky top-0 z-10 flex items-center gap-3 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:bg-stone-900/95">
+      <header className="sticky top-0 z-10 flex items-center gap-3 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:bg-stone-900/95 lg:px-8 lg:py-4">
         <button onClick={() => navigate("/menu")} aria-label="Back" className="text-stone-700 dark:text-stone-200">
           <ArrowLeft size={20} />
         </button>
-        <h1 className="font-semibold text-stone-900 dark:text-stone-100">Your Orders</h1>
+        <h1 className="font-semibold text-stone-900 dark:text-stone-100 lg:text-xl">Your Orders</h1>
       </header>
 
-      <main className="px-4 py-4">
+      <main className="px-4 py-4 lg:px-8 lg:py-6">
         {isLoading && <p className="mt-8 text-center text-stone-400">Loading…</p>}
         {!isLoading && orders.length === 0 && (
           <div className="mt-16 flex flex-col items-center text-stone-400">
@@ -145,12 +157,12 @@ export function OrderHistory() {
             <p>No orders yet.</p>
           </div>
         )}
-        <div className="space-y-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 lg:gap-4">
           {orders.map((o) => (
             <button
               key={o.id}
               onClick={() => setSelected(o.id)}
-              className="flex w-full items-center justify-between rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm dark:border-stone-700 dark:bg-stone-800"
+              className="flex w-full items-center justify-between rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-stone-700 dark:bg-stone-800"
             >
               <div>
                 <div className="flex items-center gap-2">

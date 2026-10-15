@@ -1,23 +1,40 @@
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Clock3, Hourglass, Moon } from "lucide-react";
-import { formatClock, formatDuration, useStoreStatus } from "../hooks";
+import { formatClock, formatClockDuration, formatDuration, useStoreStatus } from "../hooks";
 
 const CLOSING_SOON_SECONDS = 30 * 60;
+
+/** Ticks once a second on its own, so only this small piece re-renders. When it
+ * hits zero it asks the server again, which flips the page to "Open now". */
+function LiveCountdown({ changesAt }: { changesAt: number }) {
+  const queryClient = useQueryClient();
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const left = Math.max(0, Math.ceil((changesAt - now) / 1000));
+  useEffect(() => {
+    if (left === 0) queryClient.invalidateQueries({ queryKey: ["store-status"] });
+  }, [left, queryClient]);
+  return <span className="tabular-nums">{formatClockDuration(left)}</span>;
+}
 
 /** Compact live status under the brand name — the first thing seen on load. */
 export function StoreStatusChip() {
   const s = useStoreStatus();
   if (!s.loaded) return <div className="mt-1 h-4 w-32 animate-pulse rounded bg-stone-200 dark:bg-stone-800" />;
 
-  const allDay = s.openTime === s.closeTime;
   const soon = s.isOpen && s.secondsLeft != null && s.secondsLeft <= CLOSING_SOON_SECONDS;
   const detail = s.isOpen
     ? soon
       ? `closes in ${formatDuration(s.secondsLeft!)}`
-      : !s.manual && !allDay && s.closeTime
-        ? `until ${formatClock(s.closeTime)}`
+      : !s.manual && s.nextChangeTime
+        ? `until ${formatClock(s.nextChangeTime)}`
         : null
-    : !s.manual && s.openTime
-      ? `opens ${formatClock(s.openTime)}`
+    : !s.manual && s.nextChangeTime
+      ? `opens ${formatClock(s.nextChangeTime)}`
       : null;
 
   const tone = !s.isOpen ? "text-rose-600 dark:text-rose-400" : soon ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400";
@@ -68,11 +85,17 @@ export function StoreStatusBanner() {
         <div className="min-w-0 flex-1">
           <h2 className="text-lg font-bold leading-tight">We're not taking orders right now</h2>
           <p className="mt-1 text-sm text-stone-300">{s.message}</p>
-          {!s.manual && s.secondsLeft != null && (
-            <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-brand-500 px-3.5 py-1.5 text-sm font-bold text-white">
-              <Clock3 size={14} />
-              Opens in {formatDuration(s.secondsLeft)}
-              {s.openTime && <span className="font-medium opacity-90">· {formatClock(s.openTime)}</span>}
+          {!s.manual && s.changesAt != null && (
+            <div className="mt-3 inline-flex items-center gap-2.5 rounded-2xl bg-brand-500 px-4 py-2 text-white shadow-lg shadow-brand-600/30">
+              <Clock3 size={18} />
+              <div className="leading-tight">
+                <p className="text-[11px] font-medium uppercase tracking-wide opacity-90">
+                  Opens {s.nextChangeTime ? `at ${formatClock(s.nextChangeTime)}` : "soon"} · in
+                </p>
+                <p className="text-xl font-extrabold">
+                  <LiveCountdown changesAt={s.changesAt} />
+                </p>
+              </div>
             </div>
           )}
         </div>

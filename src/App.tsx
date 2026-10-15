@@ -4,6 +4,7 @@ import { Verify } from "./pages/Verify";
 import { OrderConfirmation } from "./pages/OrderConfirmation";
 import { OrderHistory } from "./pages/OrderHistory";
 import { useCustomerAuth } from "./context/CustomerAuthContext";
+import { useStoreStatusPolling } from "./hooks";
 
 /** Phone verification gates the whole app — nothing past it (menu, cart, checkout) is reachable until it's done. */
 function RequireCustomerAuth({ children }: { children: JSX.Element }) {
@@ -20,16 +21,23 @@ function RequireCustomerAuth({ children }: { children: JSX.Element }) {
  * across a 1440px window, which is what every page looked like without it.
  */
 export default function App() {
-  // The menu is a browsing grid and uses the full desktop width; the other pages are single-column forms/receipts and stay phone-width.
+  useStoreStatusPolling();
+  // Every page scales with the screen instead of staying a phone-width column:
+  // the menu and order list are browsing grids that use the laptop width, the
+  // order status page is a roomier centred card, and the login screen is full-bleed.
   const { pathname } = useLocation();
-  const wide = pathname.startsWith("/menu");
+  const widthClass = pathname.startsWith("/menu")
+    ? "sm:max-w-3xl lg:max-w-6xl xl:max-w-7xl"
+    : pathname.startsWith("/orders")
+      ? "sm:max-w-2xl lg:max-w-5xl xl:max-w-6xl"
+      : "sm:max-w-lg lg:max-w-2xl";
   // The login screen is a full-bleed split layout (brand panel + form) on laptops.
   const fullBleed = pathname.startsWith("/verify");
   return (
     <div className="min-h-screen bg-stone-200 dark:bg-stone-900 sm:flex sm:justify-center">
       <div
         className={`w-full ${
-          fullBleed ? "" : `sm:shadow-2xl ${wide ? "sm:max-w-3xl lg:max-w-6xl xl:max-w-7xl" : "sm:max-w-md"}`
+          fullBleed ? "" : `sm:shadow-2xl ${widthClass}`
         }`}
       >
         <Routes>

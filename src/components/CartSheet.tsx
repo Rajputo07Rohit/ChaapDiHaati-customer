@@ -5,11 +5,15 @@ import { ArrowLeft, LocateFixed, Tag, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { api, ApiError } from "../api/client";
 import { AppliedPromo, MenuCategory, OrderRow } from "../api/types";
+import { DeliveryTimeNotice } from "./DeliveryTimeNotice";
+import { CashfreePaymentPanel } from "./CashfreePaymentPanel";
+import { ConfirmOrderDialog } from "./ConfirmOrderDialog";
 import { rumaliNeedsMain, useStoreStatus } from "../hooks";
 import { CartLine, useCart } from "../context/CartContext";
 import { useCustomerAuth } from "../context/CustomerAuthContext";
 import { QuantityStepper } from "./QuantityStepper";
 
+const CASHFREE_PENDING_KEY = "cdh_cashfree_pending";
 const IDEMPOTENCY_STORAGE_KEY = "cdh_order_idempotency";
 
 type OrderType = "DINE_IN" | "TAKEAWAY" | "DELIVERY";
@@ -63,6 +67,11 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   });
   const extrasItems = menuData?.categories.find((c) => c.name === "Extras")?.items.filter((i) => i.status === "ACTIVE" && !/delivery/i.test(i.name)) ?? [];
   const { phone } = useCustomerAuth();
+  const { data: payConfig } = useQuery({
+    queryKey: ["payment-config"],
+    queryFn: () => api.get<{ cashfree: { enabled: boolean; testMode: boolean } }>("/public/orders/payment-config"),
+    staleTime: 5 * 60_000,
+  });
   const store = useStoreStatus();
   const categoryOf = new Map<string, string>();
   for (const c of menuData?.categories ?? []) for (const i of c.items) categoryOf.set(i.id, c.name);
@@ -81,6 +90,18 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   const [notes, setNotes] = useState("");
   const [placing, setPlacing] = useState(false);
   const [showDeliveryReview, setShowDeliveryReview] = useState(false);
+  // The action to run once the customer confirms the "check your order" popup.
+  // An online payment in progress (shown full-screen with a 5-minute countdown).
+  const [cfPayment, setCfPayment] = useState<{
+    cashfreeOrderId: string;
+    paymentSessionId: string;
+    mode: "sandbox" | "production";
+    windowSeconds: number;
+    amountPaise: number;
+  } | null>(null);
+  const [payNotice, setPayNotice] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
+  const askConfirm = (action: () => void) => setConfirmAction(() => action);
 
   const [promoInput, setPromoInput] = useState("");
   const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null);
@@ -144,7 +165,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
       setShowDeliveryReview(true);
       return;
     }
-    placeOrder();
+    askConfirm(() => placeOrder());
   }
 
   function shareLocation() {
@@ -168,9 +189,10 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   }
 
   async function placeOrder(
-    paymentProvider?: "MOCK" | "COD" | "RAZORPAY",
-    razorpayDetails?: { razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature: string }
-  ) {
+    paymentProvider?: "MOCK" | "COD" | "CASHFREE",
+    paymentDetails?: { cashfreeOrderId: string },
+    opts: { silent?: boolean } = {}
+  ): Promise<boolean> {
     setPlacing(true);
     const signature = JSON.stringify({ lines, orderType, customerName, tableLabel, deliveryAddress, coords, notes });
     try {
@@ -182,7 +204,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
         deliveryLatitude: orderType === "DELIVERY" ? coords?.lat : undefined,
         deliveryLongitude: orderType === "DELIVERY" ? coords?.lng : undefined,
         paymentProvider,
-        ...razorpayDetails,
+        ...paymentDetails,
         notes: notes || undefined,
         items: lines.map((l) => ({ menuItemId: l.menuItemId, priceType: l.priceType, quantity: l.quantity, addonIds: l.addons.map((a) => a.id) })),
         idempotencyKey: getIdempotencyKey(signature),
@@ -195,54 +217,107 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
       setShowDeliveryReview(false);
       onClose();
       navigate(`/order/${order.id}`, { state: { order } });
+      return true;
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not place your order. Please try again.");
+      if (!opts.silent) toast.error(err instanceof ApiError ? err.message : "Could not place your order. Please try again.");
+      return false;
     } finally {
       setPlacing(false);
     }
   }
 
-  async function payWithRazorpay() {
-    if (typeof window.Razorpay === "undefined") {
+  // Online payment through Cashfree (UPI only — apps and QR). The
+  // server prices the cart and opens the Cashfree order; the customer pays in
+  // Cashfree's popup; then the server asks Cashfree whether it was really paid
+  // before the order is created — nothing the browser reports is trusted.
+  async function payWithCashfree() {
+    if (typeof window.Cashfree !== "function") {
       toast.error("Payment isn't available right now. Please try Cash on Delivery.");
       return;
     }
+    const cartSignature = JSON.stringify({ lines, orderType, promo: appliedPromo?.code });
+
+    // If the customer paid earlier but the order never got created (closed the
+    // tab, lost network…), claim that payment instead of charging them twice.
+    try {
+      const raw = sessionStorage.getItem(CASHFREE_PENDING_KEY);
+      const pending = raw ? (JSON.parse(raw) as { sig: string; id: string }) : null;
+      if (pending && pending.sig === cartSignature) {
+        setPlacing(true);
+        if (await placeOrder("CASHFREE", { cashfreeOrderId: pending.id }, { silent: true })) {
+          sessionStorage.removeItem(CASHFREE_PENDING_KEY);
+          return;
+        }
+      }
+    } catch {
+      // No stored attempt (or storage blocked) — carry on with a fresh payment.
+    }
+
     setPlacing(true);
     try {
-      const { razorpayOrderId, amountPaise, keyId } = await api.post<{
-        razorpayOrderId: string;
+      const { cashfreeOrderId, paymentSessionId, mode, windowSeconds, amountPaise } = await api.post<{
+        cashfreeOrderId: string;
+        paymentSessionId: string;
         amountPaise: number;
-        keyId: string;
-      }>("/public/orders/razorpay-order", {
+        mode: "sandbox" | "production";
+        windowSeconds: number;
+      }>("/public/orders/cashfree-order", {
         orderType,
         items: lines.map((l) => ({ menuItemId: l.menuItemId, priceType: l.priceType, quantity: l.quantity, addonIds: l.addons.map((a) => a.id) })),
         promoCode: appliedPromo?.code,
       });
-
-      const razorpay = new window.Razorpay({
-        key: keyId,
-        amount: amountPaise,
-        currency: "INR",
-        name: "Chaap Di Haati (Test Mode)",
-        description: "Delivery order",
-        order_id: razorpayOrderId,
-        prefill: phone ? { contact: phone } : undefined,
-        theme: { color: "#ea580c" },
-        handler: (response) => {
-          placeOrder("RAZORPAY", {
-            razorpayOrderId: response.razorpay_order_id,
-            razorpayPaymentId: response.razorpay_payment_id,
-            razorpaySignature: response.razorpay_signature,
-          });
-        },
-        modal: {
-          ondismiss: () => setPlacing(false),
-        },
-      });
-      razorpay.open();
+      try {
+        sessionStorage.setItem(CASHFREE_PENDING_KEY, JSON.stringify({ sig: cartSignature, id: cashfreeOrderId }));
+      } catch {
+        // Only the double-charge safety net is lost.
+      }
+      setPayNotice(null);
+      // Hand over to the full-screen payment panel (it owns the 5-minute timer).
+      setCfPayment({ cashfreeOrderId, paymentSessionId, mode, windowSeconds, amountPaise });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not start payment. Please try again.");
       setPlacing(false);
+    }
+  }
+
+  function clearPending() {
+    try {
+      sessionStorage.removeItem(CASHFREE_PENDING_KEY);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Payment finished (or was detected): the server double-checks with Cashfree before creating the order.
+  async function onCashfreePaid() {
+    const pay = cfPayment;
+    setCfPayment(null);
+    if (!pay) return;
+    if (await placeOrder("CASHFREE", { cashfreeOrderId: pay.cashfreeOrderId })) clearPending();
+  }
+
+  // Close the payment on the server so it can't be paid afterwards. If it turns out
+  // the customer did pay at the last moment, honour that and place the order.
+  async function closeCashfreePayment(reason: "timeout" | "cancel") {
+    const pay = cfPayment;
+    setCfPayment(null);
+    if (!pay) return;
+    try {
+      const { paid } = await api.post<{ paid: boolean }>("/public/orders/cashfree-order/cancel", { cashfreeOrderId: pay.cashfreeOrderId });
+      if (paid) {
+        if (await placeOrder("CASHFREE", { cashfreeOrderId: pay.cashfreeOrderId })) clearPending();
+        return;
+      }
+    } catch {
+      // Couldn't confirm the cancellation — the customer is told to contact us below if money was taken.
+    }
+    clearPending();
+    setPlacing(false);
+    if (reason === "timeout") {
+      setPayNotice("Payment time is over, so your payment was cancelled and your order was not placed. If any money was deducted, please contact us. You can try again.");
+      toast.error("Payment time is over — order cancelled.");
+    } else {
+      toast("Payment cancelled.");
     }
   }
 
@@ -304,33 +379,51 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
               </div>
             </div>
 
-            <div className="mt-5 space-y-2">
+            {payNotice && (
+              <p className="mt-4 rounded-xl bg-red-50 px-3.5 py-3 text-sm font-medium text-red-700 dark:bg-red-900/20 dark:text-red-300">{payNotice}</p>
+            )}
+            <DeliveryTimeNotice compact className="mt-4" />
+
+            <div className="mt-4 space-y-2">
               <button
-                onClick={() => placeOrder("COD")}
+                onClick={() => askConfirm(() => placeOrder("COD"))}
                 disabled={placing || blocked}
                 className="w-full rounded-2xl bg-brand-600 py-3.5 font-semibold text-white disabled:opacity-60"
               >
                 {placing ? "Placing order…" : "Cash on Delivery"}
               </button>
-              <button
-                onClick={payWithRazorpay}
-                disabled={placing || blocked}
-                className="w-full rounded-2xl border border-stone-200 py-3.5 font-semibold text-stone-700 disabled:opacity-60 dark:border-stone-700 dark:text-stone-200"
-              >
-                {placing ? "Please wait…" : `Pay ${formatRupees(grandTotal)} with Razorpay (Test Mode)`}
-              </button>
-              <button
-                onClick={() => placeOrder("MOCK")}
-                disabled={placing || blocked}
-                className="w-full rounded-2xl border border-stone-200 py-3 text-sm font-medium text-stone-500 disabled:opacity-60 dark:border-stone-700 dark:text-stone-400"
-              >
-                {placing ? "Placing order…" : "Pay Online — mock (skip gateway)"}
-              </button>
+              {payConfig?.cashfree.enabled && (
+                <button
+                  onClick={() => askConfirm(payWithCashfree)}
+                  disabled={placing || blocked}
+                  className="w-full rounded-2xl border-2 border-brand-600 py-3 text-stone-900 disabled:opacity-60 dark:text-stone-100"
+                >
+                  <span className="block font-semibold">{placing ? "Please wait…" : `Pay ${formatRupees(grandTotal)} online`}</span>
+                  <span className="block text-xs font-normal text-stone-500 dark:text-stone-400">Pay with any UPI app or QR code</span>
+                </button>
+              )}
+              {/* Test-only shortcut; never shown on the live site (the server rejects it there anyway). */}
+              {import.meta.env.DEV && (
+                <button
+                  onClick={() => askConfirm(() => placeOrder("MOCK"))}
+                  disabled={placing || blocked}
+                  className="w-full rounded-2xl border border-stone-200 py-3 text-sm font-medium text-stone-500 disabled:opacity-60 dark:border-stone-700 dark:text-stone-400"
+                >
+                  {placing ? "Placing order…" : "Pay Online — mock (skip gateway)"}
+                </button>
+              )}
             </div>
-            <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-              Razorpay is running in test mode — use card 4111 1111 1111 1111, any future expiry/CVV, to simulate a
-              real payment. Nothing is actually charged. "Mock" skips the gateway entirely for quick testing.
-            </p>
+            {payConfig?.cashfree.enabled && payConfig.cashfree.testMode && (
+              <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                <span className="font-semibold">Payments are in TEST mode — nothing is charged.</span> Use UPI ID{" "}
+                <span className="font-mono">testsuccess@gocash</span> (success) or <span className="font-mono">testfailure@gocash</span> (failure).
+              </p>
+            )}
+            {payConfig && !payConfig.cashfree.enabled && (
+              <p className="mt-4 rounded-xl bg-stone-100 px-4 py-3 text-xs text-stone-500 dark:bg-stone-800 dark:text-stone-400">
+                Online payment isn't available right now — please choose Cash on Delivery.
+              </p>
+            )}
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -429,9 +522,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                   )}
                   {orderType === "DELIVERY" && (
                     <>
-                      <p className="mt-2 rounded-xl bg-brand-50 px-3 py-2 text-xs font-bold text-brand-700 dark:bg-stone-800 dark:text-brand-400">
-                        ⏱ Preparing takes about 15 min, and delivery takes about 15 min more. Your order should reach you in around 30 min.
-                      </p>
+                      <DeliveryTimeNotice className="mt-2" />
                       <button
                         type="button"
                         onClick={shareLocation}
@@ -557,6 +648,32 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
           </div>
         )}
       </div>
+      {cfPayment && (
+        <CashfreePaymentPanel
+          paymentSessionId={cfPayment.paymentSessionId}
+          cashfreeOrderId={cfPayment.cashfreeOrderId}
+          mode={cfPayment.mode}
+          windowSeconds={cfPayment.windowSeconds}
+          amountLabel={formatRupees(cfPayment.amountPaise)}
+          onPaid={onCashfreePaid}
+          onTimeout={() => closeCashfreePayment("timeout")}
+          onCancel={() => closeCashfreePayment("cancel")}
+        />
+      )}
+      {confirmAction && (
+        <ConfirmOrderDialog
+          lines={lines}
+          totalPaise={grandTotal}
+          orderType={orderType}
+          busy={placing}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={() => {
+            const run = confirmAction;
+            setConfirmAction(null);
+            run();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -147,7 +147,7 @@ export function ItemCard({ item }: { item: MenuItemRow }) {
           <h3 className="font-semibold text-stone-900 dark:text-stone-100">{item.name}</h3>
           {!isAvailable && (
             <span className="shrink-0 rounded-full bg-stone-200 px-2 py-0.5 text-[11px] font-medium text-stone-600 dark:bg-stone-700 dark:text-stone-300">
-              Currently unavailable
+              Out of stock
             </span>
           )}
         </div>

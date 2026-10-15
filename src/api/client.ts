@@ -1,3 +1,5 @@
+import { markUnexpectedSignOut } from "../utils/session";
+
 const SESSION_STORAGE_KEY = "cdh_customer_session";
 
 export class ApiError extends Error {
@@ -47,7 +49,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       } catch {
         // Nothing to clean up if storage isn't available.
       }
-      if (!window.location.pathname.startsWith("/verify")) window.location.href = "/verify";
+      if (!window.location.pathname.startsWith("/verify")) {
+        markUnexpectedSignOut(window.location.pathname);
+        window.location.href = "/verify";
+      }
     }
     const message = body?.error?.message || `Request failed (${res.status})`;
     throw new ApiError(message, res.status, body?.error?.code, body?.error?.details);

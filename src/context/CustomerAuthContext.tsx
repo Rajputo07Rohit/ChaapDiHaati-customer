@@ -1,4 +1,5 @@
-import { createContext, ReactNode, useContext, useState } from "react";
+import { createContext, ReactNode, useContext, useEffect, useState } from "react";
+import { markUnexpectedSignOut, rememberPhone } from "../utils/session";
 
 const STORAGE_KEY = "cdh_customer_session";
 
@@ -30,9 +31,36 @@ function loadStored(): StoredSession | null {
 export function CustomerAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSessionState] = useState<StoredSession | null>(loadStored);
 
+  // If the browser's site data is cleared (or another tab logs out) while the
+  // app is open, the in-memory session would keep looking signed-in until the
+  // next request fails. Re-check storage whenever the tab regains focus or
+  // another tab touches storage, and drop to signed-out right away so the
+  // route guard can show the verify screen with an explanation.
+  useEffect(() => {
+    function syncWithStorage() {
+      setSessionState((current) => {
+        if (current && !loadStored()) {
+          markUnexpectedSignOut(window.location.pathname);
+          return null;
+        }
+        return current;
+      });
+    }
+    const onVisible = () => document.visibilityState === "visible" && syncWithStorage();
+    window.addEventListener("focus", syncWithStorage);
+    window.addEventListener("storage", syncWithStorage);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", syncWithStorage);
+      window.removeEventListener("storage", syncWithStorage);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
   function setSession(phone: string, token: string) {
     const next = { phone, token };
     setSessionState(next);
+    rememberPhone(phone);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {

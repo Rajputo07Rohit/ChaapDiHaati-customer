@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { api, ApiError } from "../api/client";
 import { useCustomerAuth } from "../context/CustomerAuthContext";
+import { consumeReturnTo, consumeSignedOutNotice, getRememberedPhone } from "../utils/session";
 import logo from "../assets/logo.png";
 
 const RESEND_COOLDOWN_SECONDS = 30;
@@ -117,7 +118,9 @@ export function Verify() {
   const { setSession } = useCustomerAuth();
 
   const [step, setStep] = useState<"phone" | "otp">("phone");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(getRememberedPhone);
+  // Read once on mount (it clears itself) so a re-render doesn't hide it.
+  const [signedOutNotice] = useState(consumeSignedOutNotice);
   const [otp, setOtp] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -167,7 +170,7 @@ export function Verify() {
         phone: e164,
       });
       setSession(verifiedPhone, token);
-      navigate("/menu", { replace: true });
+      navigate(consumeReturnTo() ?? "/menu", { replace: true });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -186,6 +189,11 @@ export function Verify() {
           <h2 className="text-2xl font-bold text-stone-900 dark:text-stone-100">
             {step === "phone" ? "Verify your phone number" : "Enter the OTP"}
           </h2>
+          {signedOutNotice && step === "phone" && (
+            <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+              You were signed out (your session expired or browser data was cleared). Verify again to pick up where you left off — your past orders are safe.
+            </p>
+          )}
           <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">
             {step === "phone"
               ? "We'll send a one-time code to confirm it's you before you order."

@@ -1,9 +1,11 @@
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Clock, XCircle } from "lucide-react";
 import { api } from "../api/client";
 import { OrderRow } from "../api/types";
 import { ReadyTimer } from "../components/ReadyTimer";
+import { ReviewPrompt, markReviewPrompted, wasReviewPrompted } from "../components/ReviewPrompt";
 import logo from "../assets/logo.png";
 
 function formatRupees(paise: number): string {
@@ -45,6 +47,19 @@ export function OrderConfirmation() {
   const waiting = !status || status === "PENDING_ACCEPTANCE";
   const step = status ? stepIndex(status) : 0;
 
+  // Ask for a Google rating once the order is done — only once per order, and
+  // only while the customer is on this screen when it flips to completed.
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const finished = status === "COMPLETED" || status === "DELIVERED";
+  useEffect(() => {
+    if (!finished || !id || wasReviewPrompted(id)) return;
+    const t = setTimeout(() => {
+      markReviewPrompted(id);
+      setReviewOpen(true);
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [finished, id]);
+
   let headline = "Order placed!";
   let sub = "Waiting for the restaurant to accept your order…";
   let Icon = Clock;
@@ -72,9 +87,9 @@ export function OrderConfirmation() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-white px-6 text-center dark:bg-stone-950">
       <img src={logo} alt="" className="mb-2 h-12 w-12 object-contain" />
       <Icon size={56} className={iconClass} />
-      <h1 className="mt-4 text-2xl font-bold text-stone-900 dark:text-stone-100">{headline}</h1>
+      <h1 className="mt-4 text-2xl font-bold text-stone-900 dark:text-stone-100 lg:text-3xl">{headline}</h1>
       {order && <p className="mt-1 text-stone-500 dark:text-stone-400">Order #{order.order_number}</p>}
-      <p className="mt-2 max-w-xs text-sm text-stone-600 dark:text-stone-300">{sub}</p>
+      <p className="mt-2 max-w-xs text-sm text-stone-600 dark:text-stone-300 lg:max-w-md lg:text-base">{sub}</p>
       {order && <ReadyTimer order={order} />}
       {order && (
         <>
@@ -88,7 +103,7 @@ export function OrderConfirmation() {
       )}
 
       {!denied && (
-        <div className="mt-6 flex w-full max-w-xs items-center justify-between">
+        <div className="mt-6 flex w-full max-w-xs items-center justify-between lg:max-w-md">
           {STEPS.map((label, i) => (
             <div key={label} className="flex flex-1 flex-col items-center gap-1">
               <div className={`h-2.5 w-2.5 rounded-full ${i <= step ? "bg-brand-600" : "bg-stone-300 dark:bg-stone-700"}`} />
@@ -99,15 +114,17 @@ export function OrderConfirmation() {
       )}
 
       {waiting && (
-        <p className="mt-4 max-w-xs text-xs text-stone-500 dark:text-stone-400">
+        <p className="mt-4 max-w-xs text-xs text-stone-500 dark:text-stone-400 lg:max-w-md lg:text-sm">
           This usually takes a couple of minutes. If it isn't accepted in about 5 minutes it will be cancelled automatically.
         </p>
       )}
       {status === "PENDING_ACCEPTANCE" || status === "CONFIRMED" ? (
-        <p className="mt-4 max-w-xs rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-700 dark:bg-stone-800 dark:text-brand-400">
+        <p className="mt-4 max-w-xs rounded-xl bg-brand-50 lg:max-w-md px-4 py-3 text-sm text-brand-700 dark:bg-stone-800 dark:text-brand-400">
           Please pay at the counter / on delivery unless you already paid online.
         </p>
       ) : null}
+
+      {reviewOpen && <ReviewPrompt delivered={order?.order_type === "DELIVERY"} onClose={() => setReviewOpen(false)} />}
 
       <button onClick={() => navigate("/menu")} className="mt-8 rounded-full bg-brand-600 px-8 py-3 font-semibold text-white">
         {denied ? "Try again" : "Order more"}

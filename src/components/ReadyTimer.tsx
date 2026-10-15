@@ -26,7 +26,7 @@ export function ReadyTimer({ order }: { order: Pick<OrderRow, "status" | "prep_t
   const late = minsLeft <= 0;
 
   return (
-    <div className="mt-4 w-full max-w-xs rounded-2xl bg-brand-50 px-4 py-3 text-left ring-1 ring-brand-200 dark:bg-stone-800 dark:ring-stone-700">
+    <div className="mt-4 w-full max-w-xs lg:max-w-md rounded-2xl bg-brand-50 px-4 py-3 text-left ring-1 ring-brand-200 dark:bg-stone-800 dark:ring-stone-700">
       <div className="flex items-center gap-3">
         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-600 text-white">
           {late ? <ChefHat size={20} /> : <Timer size={20} />}
@@ -37,7 +37,7 @@ export function ReadyTimer({ order }: { order: Pick<OrderRow, "status" | "prep_t
           </p>
           <p className="text-xs text-stone-600 dark:text-stone-400">
             {late ? "Your food is being finished up." : `Around ${clock(readyAt)}`}
-            {order.order_type === "DELIVERY" && !late && " · then ~15 min delivery"}
+            {order.order_type === "DELIVERY" && !late && " · delivery time may vary"}
           </p>
         </div>
       </div>
