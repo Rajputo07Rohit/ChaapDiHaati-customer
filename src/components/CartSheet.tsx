@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, LocateFixed, Tag, Trash2, X } from "lucide-react";
+import { ArrowLeft, LocateFixed, MapPin, PencilLine, Tag, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { api, ApiError } from "../api/client";
-import { AppliedPromo, MenuCategory, OrderRow } from "../api/types";
+import { AppliedPromo, CustomerProfile, MenuCategory, OrderRow } from "../api/types";
 import { DeliveryTimeNotice } from "./DeliveryTimeNotice";
 import { CashfreePaymentPanel } from "./CashfreePaymentPanel";
 import { ConfirmOrderDialog } from "./ConfirmOrderDialog";
@@ -59,8 +59,20 @@ function getIdempotencyKey(signature: string): string {
   }
 }
 
+/** Order lines as the API wants them, including each item's kitchen note. */
+function apiItems(lines: CartLine[]) {
+  return lines.map((l) => ({
+    menuItemId: l.menuItemId,
+    priceType: l.priceType,
+    quantity: l.quantity,
+    addonIds: l.addons.map((a) => a.id),
+    specialInstructions: l.note?.trim() || undefined,
+  }));
+}
+
 export function CartSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { lines, addItem, setQuantity, removeItem, totalPaise, clear } = useCart();
+  const { lines, addItem, setQuantity, removeItem, setNote, replaceAll, totalPaise, clear } = useCart();
+  const [editingNote, setEditingNote] = useState<string | null>(null);
   const { data: menuData } = useQuery({
     queryKey: ["public-menu"],
     queryFn: () => api.get<{ categories: MenuCategory[] }>("/public/menu"),
@@ -76,7 +88,11 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   const categoryOf = new Map<string, string>();
   for (const c of menuData?.categories ?? []) for (const i of c.items) categoryOf.set(i.id, c.name);
   const rumaliOnly = rumaliNeedsMain(lines, categoryOf);
-  const blocked = !store.isOpen || rumaliOnly;
+  // Items that sold out (or left the menu) while sitting in the cart — caught here, not as an error at checkout.
+  const menuStatus = new Map<string, string>();
+  for (const c of menuData?.categories ?? []) for (const i of c.items) menuStatus.set(i.id, i.status);
+  const soldOutKeys = menuData ? lines.filter((l) => menuStatus.get(l.menuItemId) !== "ACTIVE").map((l) => l.key) : [];
+  const blocked = !store.isOpen || rumaliOnly || soldOutKeys.length > 0;
   const navigate = useNavigate();
 
   const [orderType, setOrderType] = useState<OrderType>("TAKEAWAY");
@@ -88,6 +104,19 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [notes, setNotes] = useState("");
+  // A returning customer's name and recent addresses, so checkout is a couple of taps.
+  const { data: profile } = useQuery({
+    queryKey: ["customer-profile"],
+    queryFn: () => api.get<CustomerProfile>("/public/profile"),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const [prefilled, setPrefilled] = useState(false);
+  useEffect(() => {
+    if (prefilled || !profile) return;
+    setPrefilled(true);
+    if (profile.name && !customerName) setCustomerName(profile.name);
+  }, [profile, prefilled, customerName]);
   const [placing, setPlacing] = useState(false);
   const [showDeliveryReview, setShowDeliveryReview] = useState(false);
   // The action to run once the customer confirms the "check your order" popup.
@@ -194,21 +223,11 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
     opts: { silent?: boolean } = {}
   ): Promise<boolean> {
     setPlacing(true);
-    const signature = JSON.stringify({ lines, orderType, customerName, tableLabel, deliveryAddress, coords, notes });
     try {
       const { order } = await api.post<{ order: OrderRow }>("/public/orders", {
-        orderType,
-        customerName: customerName.trim() || undefined,
-        tableLabel: orderType === "DINE_IN" ? tableLabel || undefined : undefined,
-        deliveryAddress: orderType === "DELIVERY" ? deliveryAddress.trim() : undefined,
-        deliveryLatitude: orderType === "DELIVERY" ? coords?.lat : undefined,
-        deliveryLongitude: orderType === "DELIVERY" ? coords?.lng : undefined,
+        ...orderPayload(),
         paymentProvider,
         ...paymentDetails,
-        notes: notes || undefined,
-        items: lines.map((l) => ({ menuItemId: l.menuItemId, priceType: l.priceType, quantity: l.quantity, addonIds: l.addons.map((a) => a.id) })),
-        idempotencyKey: getIdempotencyKey(signature),
-        promoCode: appliedPromo?.code,
       });
       clear();
       setCoords(null);
@@ -219,11 +238,37 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
       navigate(`/order/${order.id}`, { state: { order } });
       return true;
     } catch (err) {
-      if (!opts.silent) toast.error(err instanceof ApiError ? err.message : "Could not place your order. Please try again.");
+      if (!opts.silent) {
+        const msg = err instanceof ApiError ? err.message : "Could not place your order. Please try again.";
+        if (paymentProvider === "CASHFREE") {
+          // They've paid — make it crystal clear the money isn't lost.
+          setPayNotice(
+            `${msg} Your payment is safe: we'll keep trying to place this order, and if it can't be placed the full amount is refunded to your UPI account automatically (3–5 working days). Check "Your orders" in a minute.`
+          );
+        }
+        toast.error(msg);
+      }
       return false;
     } finally {
       setPlacing(false);
     }
+  }
+
+  /** The whole order as the API wants it — also saved with an online payment so it can be placed even if this page is lost. */
+  function orderPayload() {
+    const signature = JSON.stringify({ lines, orderType, customerName, tableLabel, deliveryAddress, coords, notes });
+    return {
+      orderType,
+      customerName: customerName.trim() || undefined,
+      tableLabel: orderType === "DINE_IN" ? tableLabel || undefined : undefined,
+      deliveryAddress: orderType === "DELIVERY" ? deliveryAddress.trim() : undefined,
+      deliveryLatitude: orderType === "DELIVERY" ? coords?.lat : undefined,
+      deliveryLongitude: orderType === "DELIVERY" ? coords?.lng : undefined,
+      notes: notes || undefined,
+      items: apiItems(lines),
+      idempotencyKey: getIdempotencyKey(signature),
+      promoCode: appliedPromo?.code,
+    };
   }
 
   // Online payment through Cashfree (UPI only — apps and QR). The
@@ -261,11 +306,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
         amountPaise: number;
         mode: "sandbox" | "production";
         windowSeconds: number;
-      }>("/public/orders/cashfree-order", {
-        orderType,
-        items: lines.map((l) => ({ menuItemId: l.menuItemId, priceType: l.priceType, quantity: l.quantity, addonIds: l.addons.map((a) => a.id) })),
-        promoCode: appliedPromo?.code,
-      });
+      }>("/public/orders/cashfree-order", orderPayload());
       try {
         sessionStorage.setItem(CASHFREE_PENDING_KEY, JSON.stringify({ sig: cartSignature, id: cashfreeOrderId }));
       } catch {
@@ -314,7 +355,9 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
     clearPending();
     setPlacing(false);
     if (reason === "timeout") {
-      setPayNotice("Payment time is over, so your payment was cancelled and your order was not placed. If any money was deducted, please contact us. You can try again.");
+      setPayNotice(
+        "Payment time is over, so your order was not placed. If money was deducted, don't worry — it's refunded to your UPI account automatically (3–5 working days). You can try again."
+      );
       toast.error("Payment time is over — order cancelled.");
     } else {
       toast("Payment cancelled.");
@@ -331,14 +374,14 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
             <button
               onClick={() => setShowDeliveryReview(false)}
               aria-label="Back"
-              className="text-stone-900 dark:text-stone-100"
+              className="-m-2 p-2 text-stone-900 dark:text-stone-100"
             >
               <ArrowLeft size={20} />
             </button>
           ) : (
             <h2 className="font-semibold text-stone-900 dark:text-stone-100">Your order</h2>
           )}
-          <button onClick={onClose} aria-label="Close" className="text-stone-400">
+          <button onClick={onClose} aria-label="Close" className="-m-2 p-2 text-stone-400">
             <X size={20} />
           </button>
         </div>
@@ -432,19 +475,45 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
             ) : (
               <div className="space-y-3">
                 {lines.map((l) => (
-                  <div key={l.key} className="flex items-center justify-between rounded-xl bg-stone-50 p-3 dark:bg-stone-800">
+                  <div key={l.key} className="flex items-start justify-between gap-2 rounded-xl bg-stone-50 p-3 dark:bg-stone-800">
                     <div>
-                      <p className="font-medium text-stone-900 dark:text-stone-100">{l.name}</p>
+                      <p className="font-medium text-stone-900 dark:text-stone-100">
+                        {l.name}
+                        {soldOutKeys.includes(l.key) && (
+                          <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Sold out</span>
+                        )}
+                      </p>
                       <p className="text-xs text-stone-500 dark:text-stone-400">
                         {l.priceType} · {formatRupees(lineUnitPaise(l))}
                       </p>
                       {l.addons.length > 0 && (
                         <p className="text-xs text-stone-400">+ {l.addons.map((a) => a.name).join(", ")}</p>
                       )}
+                      {editingNote === l.key ? (
+                        <input
+                          autoFocus
+                          defaultValue={l.note ?? ""}
+                          maxLength={200}
+                          onBlur={(e) => {
+                            setNote(l.key, e.target.value);
+                            setEditingNote(null);
+                          }}
+                          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                          placeholder="e.g. less spicy, no onion"
+                          className="mt-1.5 w-full rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+                        />
+                      ) : (
+                        <button
+                          onClick={() => setEditingNote(l.key)}
+                          className="mt-1 inline-flex min-h-[28px] items-center gap-1 text-xs font-medium text-brand-600 dark:text-brand-400"
+                        >
+                          <PencilLine size={12} /> {l.note ? <span className="italic text-stone-500 dark:text-stone-400">“{l.note}”</span> : "Add cooking note"}
+                        </button>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                       <QuantityStepper value={l.quantity} onChange={(q) => setQuantity(l.key, q)} />
-                      <button onClick={() => removeItem(l.key)} className="text-stone-400" aria-label="Remove item">
+                      <button onClick={() => removeItem(l.key)} className="-mr-1 p-2 text-stone-400" aria-label="Remove item">
                         <Trash2 size={18} />
                       </button>
                     </div>
@@ -485,6 +554,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                       setNameError(null);
                     }}
                     placeholder="Your name"
+                    autoComplete="name"
                     className={`w-full rounded-xl border px-4 py-2.5 text-sm dark:bg-stone-800 dark:text-stone-100 ${
                       nameError ? "border-red-400" : "border-stone-200 dark:border-stone-700"
                     }`}
@@ -536,6 +606,33 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                         <LocateFixed size={16} />
                         {locating ? "Getting location…" : coords ? "Location shared ✓" : "Use my current location"}
                       </button>
+                      {(profile?.addresses.length ?? 0) > 0 && (
+                        <div className="mt-2 space-y-1.5">
+                          <p className="text-xs font-medium text-stone-500 dark:text-stone-400">Saved addresses</p>
+                          {profile!.addresses.map((a) => {
+                            const selected = deliveryAddress.trim() === a.address;
+                            return (
+                              <button
+                                key={a.id}
+                                type="button"
+                                onClick={() => {
+                                  setDeliveryAddress(a.address);
+                                  setAddressError(null);
+                                  setCoords(a.latitude != null && a.longitude != null ? { lat: a.latitude, lng: a.longitude } : null);
+                                }}
+                                className={`flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left text-sm ${
+                                  selected
+                                    ? "bg-brand-50 text-brand-800 ring-2 ring-brand-500 dark:bg-stone-800 dark:text-brand-300"
+                                    : "border border-stone-200 text-stone-700 dark:border-stone-700 dark:text-stone-200"
+                                }`}
+                              >
+                                <MapPin size={15} className="mt-0.5 shrink-0" />
+                                <span className="line-clamp-2">{a.address}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                       <textarea
                         value={deliveryAddress}
                         onChange={(e) => {
@@ -625,6 +722,14 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
               <p className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-900/20 dark:text-rose-300">
                 {store.message}
               </p>
+            )}
+            {soldOutKeys.length > 0 && (
+              <div className="mb-3 flex items-center justify-between gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:bg-red-900/20 dark:text-red-300">
+                <span>Some items just sold out.</span>
+                <button onClick={() => replaceAll(lines.filter((l) => !soldOutKeys.includes(l.key)))} className="min-h-[32px] rounded-full bg-red-600 px-3 font-semibold text-white">
+                  Remove them
+                </button>
+              </div>
             )}
             {store.isOpen && rumaliOnly && (
               <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">

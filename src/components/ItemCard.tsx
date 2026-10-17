@@ -176,7 +176,7 @@ export function ItemCard({ item }: { item: MenuItemRow }) {
                     <button
                       type="button"
                       onClick={() => setPickingVariant(v)}
-                      className="rounded-full bg-brand-600 px-4 py-1.5 text-sm font-semibold text-white active:scale-95"
+                      className="min-h-[40px] rounded-full bg-brand-600 px-5 py-2 text-sm font-semibold text-white active:scale-95"
                     >
                       Add
                     </button>
@@ -189,7 +189,7 @@ export function ItemCard({ item }: { item: MenuItemRow }) {
                     onClick={() =>
                       addItem({ menuItemId: item.id, name: item.name, priceType: v.priceType, unitPricePaise: v.pricePaise, addons: [] }, 1)
                     }
-                    className="rounded-full bg-brand-600 px-4 py-1.5 text-sm font-semibold text-white active:scale-95"
+                    className="min-h-[40px] rounded-full bg-brand-600 px-5 py-2 text-sm font-semibold text-white active:scale-95"
                   >
                     Add
                   </button>

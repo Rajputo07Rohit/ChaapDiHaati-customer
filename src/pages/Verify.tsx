@@ -123,6 +123,8 @@ export function Verify() {
   const [signedOutNotice] = useState(consumeSignedOutNotice);
   const [otp, setOtp] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // VOICE = 2Factor phones the number and reads the code out (fallback when SMS is slow).
+  const [channel, setChannel] = useState<"SMS" | "VOICE">("SMS");
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [resendIn, setResendIn] = useState(0);
@@ -134,7 +136,7 @@ export function Verify() {
     return () => clearTimeout(timer);
   }, [resendIn]);
 
-  async function sendOtp() {
+  async function sendOtp(via: "SMS" | "VOICE" = "SMS") {
     const e164 = toE164(phone);
     if (!e164) {
       setPhoneError("Enter a valid 10-digit Indian mobile number.");
@@ -143,10 +145,13 @@ export function Verify() {
     setPhoneError(null);
     setSending(true);
     try {
-      const { sessionId } = await api.post<{ sessionId: string }>("/public/auth/send-otp", { phone: e164 });
+      const { sessionId } = await api.post<{ sessionId: string }>("/public/auth/send-otp", { phone: e164, channel: via });
       setSessionId(sessionId);
+      setChannel(via);
+      setOtp("");
       setStep("otp");
       setResendIn(RESEND_COOLDOWN_SECONDS);
+      if (via === "VOICE") toast.success("You'll get a call in a few seconds with your code.");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not send the code. Please try again.");
     } finally {
@@ -154,20 +159,38 @@ export function Verify() {
     }
   }
 
-  async function resendOtp() {
+  async function resendOtp(via: "SMS" | "VOICE") {
     if (resendIn > 0) return;
-    await sendOtp();
+    await sendOtp(via);
   }
+
+  // Android Chrome can read the SMS code itself (WebOTP) — fills the box with no typing.
+  useEffect(() => {
+    if (step !== "otp" || channel !== "SMS" || !("OTPCredential" in window)) return;
+    const ac = new AbortController();
+    (navigator.credentials as unknown as { get: (o: unknown) => Promise<{ code?: string } | null> })
+      .get({ otp: { transport: ["sms"] }, signal: ac.signal })
+      .then((cred) => cred?.code && setOtp(cred.code.replace(/\D/g, "").slice(0, 6)))
+      .catch(() => undefined);
+    return () => ac.abort();
+  }, [step, channel, sessionId]);
+
+  // Submit on its own once all 6 digits are in (typed, pasted or auto-filled).
+  useEffect(() => {
+    if (step === "otp" && otp.length === 6 && !verifying) void verifyOtp();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otp]);
 
   async function verifyOtp() {
     const e164 = toE164(phone);
-    if (!sessionId || !e164 || otp.trim().length === 0) return;
+    if (!sessionId || !e164 || otp.trim().length === 0 || verifying) return;
     setVerifying(true);
     try {
       const { token, phone: verifiedPhone } = await api.post<{ token: string; phone: string }>("/public/auth/verify-otp", {
         sessionId,
         otp: otp.trim(),
         phone: e164,
+        channel,
       });
       setSession(verifiedPhone, token);
       navigate(consumeReturnTo() ?? "/menu", { replace: true });
@@ -197,7 +220,9 @@ export function Verify() {
           <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">
             {step === "phone"
               ? "We'll send a one-time code to confirm it's you before you order."
-              : `We sent a code to ${e164Preview}.`}
+              : channel === "VOICE"
+                ? `We're calling ${e164Preview} — listen for the code.`
+                : `We sent a code by SMS to ${e164Preview}.`}
           </p>
 
           <div className="mt-7">
@@ -205,7 +230,7 @@ export function Verify() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  sendOtp();
+                  sendOtp("SMS");
                 }}
               >
                 <div
@@ -244,10 +269,13 @@ export function Verify() {
                 }}
               >
                 <input
-                  type="tel"
+                  type="text"
                   inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  aria-label="One-time code"
                   value={otp}
-                  onChange={(e) => setOtp(e.target.value)}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                   placeholder="Enter OTP"
                   className="w-full rounded-xl border border-stone-200 bg-white px-4 py-3 text-center text-2xl tracking-[0.4em] text-stone-900 placeholder:text-base placeholder:tracking-normal focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/40 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100"
                   autoFocus
@@ -259,14 +287,28 @@ export function Verify() {
                 >
                   {verifying ? "Verifying…" : "Verify"}
                 </button>
-                <button
-                  type="button"
-                  onClick={resendOtp}
-                  disabled={resendIn > 0 || sending}
-                  className="mt-3 w-full text-sm text-brand-600 disabled:text-stone-400"
-                >
-                  {resendIn > 0 ? `Resend OTP in ${resendIn}s` : "Resend OTP"}
-                </button>
+                {resendIn > 0 ? (
+                  <p className="mt-3 text-center text-sm text-stone-400">Didn't get it? You can resend in {resendIn}s</p>
+                ) : (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => resendOtp("SMS")}
+                      disabled={sending}
+                      className="min-h-[44px] rounded-xl border border-stone-200 text-sm font-semibold text-brand-600 disabled:opacity-50 dark:border-stone-700"
+                    >
+                      Resend SMS
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => resendOtp("VOICE")}
+                      disabled={sending}
+                      className="min-h-[44px] rounded-xl border border-stone-200 text-sm font-semibold text-brand-600 disabled:opacity-50 dark:border-stone-700"
+                    >
+                      Call me with code
+                    </button>
+                  </div>
+                )}
                 <button type="button" onClick={() => setStep("phone")} className="mt-2 w-full text-sm text-stone-400">
                   Change phone number
                 </button>

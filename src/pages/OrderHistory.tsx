@@ -3,9 +3,13 @@ import { ReadyTimer } from "../components/ReadyTimer";
 import { useReviewUrl } from "../components/ReviewPrompt";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ChevronRight, Package, Star } from "lucide-react";
+import { ArrowLeft, ChevronRight, Package, RotateCcw, ShoppingBag, Star } from "lucide-react";
+import toast from "react-hot-toast";
 import { api } from "../api/client";
-import { OrderDetailRow, OrderRow } from "../api/types";
+import { MenuCategory, OrderDetailRow, OrderRow } from "../api/types";
+import { useCart } from "../context/CartContext";
+import { buildReorderCart } from "../utils/reorder";
+import { RateOrder } from "../components/RateOrder";
 
 function formatRupees(paise: number): string {
   return `₹${(paise / 100).toFixed(paise % 100 === 0 ? 0 : 2)}`;
@@ -32,6 +36,18 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${s.className}`}>{s.label}</span>;
 }
 
+/** Refund line for a cancelled order that was paid online. */
+function RefundNote({ order }: { order: Pick<OrderRow, "refund_status" | "refund_amount_paise" | "net_total_paise"> }) {
+  if (!order.refund_status) return null;
+  const amount = formatRupees(order.refund_amount_paise ?? order.net_total_paise);
+  return (
+    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+      <RotateCcw size={12} />
+      {order.refund_status === "SUCCESS" ? `${amount} refunded to your UPI` : `Refund of ${amount} on its way (3–5 working days)`}
+    </p>
+  );
+}
+
 function OrderDetailSheet({ orderId, onClose }: { orderId: string; onClose: () => void }) {
   const { data, isLoading } = useQuery({
     queryKey: ["customer-order-detail", orderId],
@@ -39,6 +55,26 @@ function OrderDetailSheet({ orderId, onClose }: { orderId: string; onClose: () =
   });
   const order = data?.order;
   const reviewUrl = useReviewUrl();
+  const navigate = useNavigate();
+  const { lines: cartLines, replaceAll } = useCart();
+  const { data: menu } = useQuery({
+    queryKey: ["public-menu"],
+    queryFn: () => api.get<{ categories: MenuCategory[] }>("/public/menu"),
+  });
+
+  function reorder() {
+    if (!order || !menu) return;
+    const { lines, skipped } = buildReorderCart(order.items, menu.categories);
+    if (lines.length === 0) {
+      toast.error("None of these items are available right now.");
+      return;
+    }
+    if (cartLines.length > 0 && !window.confirm("Replace the items already in your cart with this order?")) return;
+    replaceAll(lines);
+    if (skipped.length > 0) toast(`Not available now: ${skipped.join(", ")}`, { icon: "ℹ️", duration: 5000 });
+    else toast.success("Added to your cart at today's prices.");
+    navigate("/menu");
+  }
 
   return (
     <div className="fixed inset-0 z-30 flex flex-col items-center justify-end sm:justify-center sm:p-4">
@@ -48,7 +84,7 @@ function OrderDetailSheet({ orderId, onClose }: { orderId: string; onClose: () =
           <h2 className="font-semibold text-stone-900 dark:text-stone-100">
             {order ? `Order #${order.order_number}` : "Order"}
           </h2>
-          <button onClick={onClose} aria-label="Close" className="text-stone-400">
+          <button onClick={onClose} aria-label="Close" className="-m-2 p-2 text-stone-400">
             ✕
           </button>
         </div>
@@ -72,6 +108,7 @@ function OrderDetailSheet({ orderId, onClose }: { orderId: string; onClose: () =
                     {order.status === "REFUNDED" ? "Refunded" : "Order cancelled"}
                   </p>
                   <p className="mt-0.5">{order.cancel_reason}</p>
+                  <RefundNote order={order} />
                 </div>
               )}
               <div className="space-y-2">
@@ -84,6 +121,7 @@ function OrderDetailSheet({ orderId, onClose }: { orderId: string; onClose: () =
                       {item.addons.length > 0 && (
                         <p className="text-xs text-stone-400">+ {item.addons.map((a) => a.name).join(", ")}</p>
                       )}
+                      {item.special_instructions && <p className="text-xs italic text-stone-500">“{item.special_instructions}”</p>}
                     </div>
                     <span className="tabular-nums text-stone-700 dark:text-stone-300">{formatRupees(item.line_subtotal_paise)}</span>
                   </div>
@@ -111,6 +149,18 @@ function OrderDetailSheet({ orderId, onClose }: { orderId: string; onClose: () =
                   <span>{formatRupees(order.net_total_paise)}</span>
                 </div>
               </div>
+              {(order.status === "COMPLETED" || order.status === "DELIVERED") && (
+                <div className="flex justify-center">
+                  <RateOrder orderId={order.id} existing={order.feedback} />
+                </div>
+              )}
+              <button
+                onClick={reorder}
+                disabled={!menu}
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-brand-600 font-semibold text-white disabled:opacity-60"
+              >
+                <ShoppingBag size={18} /> Reorder
+              </button>
               {(order.status === "COMPLETED" || order.status === "DELIVERED") && reviewUrl && (
                 <a
                   href={reviewUrl}
@@ -133,7 +183,7 @@ export function OrderHistory() {
   const navigate = useNavigate();
   const [selected, setSelected] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["customer-orders"],
     queryFn: () => api.get<{ orders: OrderRow[] }>("/public/orders"),
   });
@@ -143,7 +193,7 @@ export function OrderHistory() {
   return (
     <div className="min-h-screen bg-stone-50 pb-10 dark:bg-stone-950">
       <header className="sticky top-0 z-10 flex items-center gap-3 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:bg-stone-900/95 lg:px-8 lg:py-4">
-        <button onClick={() => navigate("/menu")} aria-label="Back" className="text-stone-700 dark:text-stone-200">
+        <button onClick={() => navigate("/menu")} aria-label="Back" className="-m-2 p-2 text-stone-700 dark:text-stone-200">
           <ArrowLeft size={20} />
         </button>
         <h1 className="font-semibold text-stone-900 dark:text-stone-100 lg:text-xl">Your Orders</h1>
@@ -151,7 +201,15 @@ export function OrderHistory() {
 
       <main className="px-4 py-4 lg:px-8 lg:py-6">
         {isLoading && <p className="mt-8 text-center text-stone-400">Loading…</p>}
-        {!isLoading && orders.length === 0 && (
+        {isError && !data && (
+          <div className="mt-10 flex flex-col items-center gap-3 text-center text-stone-500">
+            <p>Couldn't load your orders. Please check your connection.</p>
+            <button onClick={() => refetch()} className="min-h-[44px] rounded-full bg-brand-600 px-5 font-semibold text-white">
+              Try again
+            </button>
+          </div>
+        )}
+        {!isLoading && !isError && orders.length === 0 && (
           <div className="mt-16 flex flex-col items-center text-stone-400">
             <Package size={40} className="mb-2 opacity-40" />
             <p>No orders yet.</p>
@@ -173,6 +231,7 @@ export function OrderHistory() {
                   {o.order_type.replace("_", "-")} · {formatDate(o.created_at)}
                 </p>
                 {o.cancel_reason && <p className="mt-1 text-xs text-red-500">Reason: {o.cancel_reason}</p>}
+                <RefundNote order={o} />
               </div>
               <div className="flex items-center gap-1">
                 <span className="font-semibold text-stone-900 dark:text-stone-100">{formatRupees(o.net_total_paise)}</span>

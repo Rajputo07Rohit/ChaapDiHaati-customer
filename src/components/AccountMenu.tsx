@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ClipboardList, LogOut, User } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import { Bell, BellOff, ClipboardList, LogOut, MessageCircle, User } from "lucide-react";
+import { api } from "../api/client";
+import { CustomerProfile } from "../api/types";
+import { disablePush, enablePush, getPushState, PushState } from "../utils/push";
 import { useCustomerAuth } from "../context/CustomerAuthContext";
 import { forgetPhone } from "../utils/session";
 import { useCart } from "../context/CartContext";
@@ -19,6 +24,47 @@ export function AccountMenu() {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const [push, setPush] = useState<PushState | null>(null);
+  const queryClient = useQueryClient();
+  const { data: profile } = useQuery({
+    queryKey: ["customer-profile"],
+    queryFn: () => api.get<CustomerProfile>("/public/profile"),
+    enabled: open,
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    if (open) getPushState().then(setPush).catch(() => setPush("unsupported"));
+  }, [open]);
+
+  async function togglePush() {
+    try {
+      if (push === "on") {
+        await disablePush();
+        setPush("off");
+        toast("Order notifications turned off.");
+      } else {
+        const next = await enablePush();
+        setPush(next);
+        if (next === "on") toast.success("You'll get order updates as notifications.");
+        else if (next === "denied") toast.error("Notifications are blocked — allow them for this site in your browser settings.");
+        else if (next === "needs-install") toast("On iPhone, first add this app to your Home Screen (Share → Add to Home Screen).");
+      }
+    } catch {
+      toast.error("Couldn't change notifications. Please try again.");
+    }
+  }
+
+  async function toggleWhatsapp() {
+    const optIn = !(profile?.whatsapp_opt_in ?? true);
+    try {
+      await api.post("/public/profile/whatsapp", { optIn });
+      queryClient.invalidateQueries({ queryKey: ["customer-profile"] });
+      toast.success(optIn ? "WhatsApp order updates on." : "WhatsApp order updates off.");
+    } catch {
+      toast.error("Couldn't save that. Please try again.");
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -44,7 +90,9 @@ export function AccountMenu() {
     };
   }, [open]);
 
-  function logout() {
+  async function logout() {
+    // This device shouldn't keep getting the previous person's order updates.
+    await disablePush().catch(() => undefined);
     // The cart belongs to whoever was signed in — don't hand it to the next person on this device.
     clear();
     try {
@@ -67,13 +115,13 @@ export function AccountMenu() {
         aria-label="Account"
         aria-expanded={open}
         title="Account"
-        className="grid h-8 w-8 place-items-center rounded-full bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-400"
+        className="grid h-10 w-10 place-items-center rounded-full bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-400"
       >
-        <User size={16} />
+        <User size={18} />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-10 z-30 w-60 overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-black/10 dark:bg-stone-900 dark:ring-white/10">
+        <div className="absolute right-0 top-12 z-30 w-64 overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-black/10 dark:bg-stone-900 dark:ring-white/10">
           <div className="border-b border-stone-100 px-4 py-3 dark:border-stone-800">
             <p className="text-xs text-stone-400">Signed in as</p>
             <p className="font-semibold text-stone-900 dark:text-stone-100">{phone ? formatPhone(phone) : "—"}</p>
@@ -84,6 +132,26 @@ export function AccountMenu() {
           >
             <ClipboardList size={16} /> Your orders
           </button>
+          {push && push !== "unsupported" && (
+            <button
+              onClick={togglePush}
+              className="flex w-full items-center gap-2.5 border-t border-stone-100 px-4 py-3 text-sm text-stone-700 hover:bg-stone-50 dark:border-stone-800 dark:text-stone-200 dark:hover:bg-stone-800"
+            >
+              {push === "on" ? <Bell size={16} className="text-emerald-600" /> : <BellOff size={16} />}
+              <span className="flex-1 text-left">Order notifications</span>
+              <span className={`text-xs font-semibold ${push === "on" ? "text-emerald-600" : "text-stone-400"}`}>{push === "on" ? "On" : "Off"}</span>
+            </button>
+          )}
+          {profile?.whatsapp_available && (
+            <button
+              onClick={toggleWhatsapp}
+              className="flex w-full items-center gap-2.5 border-t border-stone-100 px-4 py-3 text-sm text-stone-700 hover:bg-stone-50 dark:border-stone-800 dark:text-stone-200 dark:hover:bg-stone-800"
+            >
+              <MessageCircle size={16} className={profile.whatsapp_opt_in ? "text-emerald-600" : ""} />
+              <span className="flex-1 text-left">WhatsApp updates</span>
+              <span className={`text-xs font-semibold ${profile.whatsapp_opt_in ? "text-emerald-600" : "text-stone-400"}`}>{profile.whatsapp_opt_in ? "On" : "Off"}</span>
+            </button>
+          )}
           {!confirming ? (
             <button
               onClick={() => setConfirming(true)}

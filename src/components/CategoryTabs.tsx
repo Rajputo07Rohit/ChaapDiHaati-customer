@@ -14,7 +14,7 @@ export function CategoryTabs({
           key={cat.id}
           type="button"
           onClick={() => onSelect(cat.id)}
-          className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition ${
+          className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${
             active === cat.id
               ? "bg-brand-600 text-white"
               : "border border-stone-300 bg-stone-100 text-stone-600 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300"

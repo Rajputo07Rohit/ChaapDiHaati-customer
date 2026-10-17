@@ -54,20 +54,48 @@ export interface OrderRow {
   confirmed_at: string | null;
   /** Prep-time estimate (minutes) staff chose when accepting. */
   prep_time_minutes: number | null;
+  /** Online payment refunded after a cancellation: PENDING (on its way) | SUCCESS | null. */
+  refund_status: "PENDING" | "SUCCESS" | null;
+  refund_amount_paise: number | null;
 }
 
 export interface OrderHistoryItem {
+  menu_item_id: string;
   name: string;
   price_type: PriceType;
   quantity: number;
   unit_price_paise: number;
   line_subtotal_paise: number;
+  special_instructions: string | null;
   addons: { name: string; unit_price_paise: number }[];
 }
 
 export interface OrderDetailRow extends OrderRow {
   delivery_address: string | null;
   items: OrderHistoryItem[];
+  /** Only while the order is on its way. */
+  rider: { name: string; phone: string | null } | null;
+  /** The customer's own private rating, once given. */
+  feedback: { rating: number; comment: string | null } | null;
+}
+
+export interface CustomerProfile {
+  name: string | null;
+  whatsapp_opt_in: boolean;
+  whatsapp_available: boolean;
+  addresses: { id: string; address: string; latitude: number | null; longitude: number | null }[];
+}
+
+export interface BusinessInfo {
+  businessName: string;
+  tagline: string;
+  address: string;
+  phone: string;
+  instagram: string;
+  mapsUrl: string;
+  reviewUrl?: string;
+  pureVeg?: boolean;
+  supportWhatsapp?: string;
 }
 
 export interface PromoCodeOffer {

@@ -19,6 +19,8 @@ export interface CartLine {
   addons: CartLineAddon[];
   /** Distinguishes e.g. the same item added as HALF vs FULL, or with different add-ons selected, as separate cart lines. */
   key: string;
+  /** Customer's note for the kitchen about this item ("no onion", "extra spicy"). */
+  note?: string;
 }
 
 interface CartContextValue {
@@ -26,6 +28,9 @@ interface CartContextValue {
   addItem: (item: Omit<CartLine, "key" | "quantity">, quantity: number) => void;
   setQuantity: (key: string, quantity: number) => void;
   removeItem: (key: string) => void;
+  setNote: (key: string, note: string) => void;
+  /** Replaces the cart (used by "Reorder"). */
+  replaceAll: (lines: CartLine[]) => void;
   clear: () => void;
   totalPaise: number;
   itemCount: number;
@@ -81,6 +86,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
     update(lines.filter((l) => l.key !== key));
   }
 
+  function setNote(key: string, note: string) {
+    update(lines.map((l) => (l.key === key ? { ...l, note: note.slice(0, 200) } : l)));
+  }
+
+  function replaceAll(next: CartLine[]) {
+    update(next);
+  }
+
   function clear() {
     update([]);
   }
@@ -92,7 +105,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const itemCount = useMemo(() => lines.reduce((sum, l) => sum + l.quantity, 0), [lines]);
 
   return (
-    <CartContext.Provider value={{ lines, addItem, setQuantity, removeItem, clear, totalPaise, itemCount }}>
+    <CartContext.Provider value={{ lines, addItem, setQuantity, removeItem, setNote, replaceAll, clear, totalPaise, itemCount }}>
       {children}
     </CartContext.Provider>
   );

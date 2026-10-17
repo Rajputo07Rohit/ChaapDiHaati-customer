@@ -11,9 +11,17 @@ import "./index.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { retry: 1, staleTime: 30_000 },
+    // Weak mobile signal is the norm — retry a couple of times with backoff before showing an error.
+    queries: { retry: 2, retryDelay: (n) => Math.min(1000 * 2 ** n, 8000), staleTime: 30_000 },
   },
 });
+
+// Offline shell + order-update push notifications (see public/sw.js).
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+  });
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api/client";
+import { BusinessInfo } from "./api/types";
 
 interface StoreStatusResponse {
   isOpen: boolean;
@@ -111,4 +112,43 @@ export function rumaliNeedsMain(lines: { menuItemId: string; name: string }[], c
   const isRumali = (l: { name: string }) => /rumali/i.test(l.name);
   if (!lines.some(isRumali)) return false;
   return !lines.some((l) => !isRumali(l) && /tandoori|momo/i.test(categoryOf.get(l.menuItemId) ?? ""));
+}
+
+/** Business contact details (shared cache with the footer). */
+export function useBusinessInfo() {
+  return useQuery({
+    queryKey: ["business-info"],
+    queryFn: () => api.get<BusinessInfo>("/public/business-info"),
+    staleTime: 10 * 60_000,
+  }).data;
+}
+
+/** "tel:" link for a typed phone number, or null if it has no digits. */
+export function telHref(raw: string | null | undefined): string | null {
+  const digits = (raw ?? "").replace(/[^\d+]/g, "");
+  return digits.replace(/\D/g, "").length >= 6 ? `tel:${digits}` : null;
+}
+
+/** WhatsApp chat link (Indian numbers default to +91), optionally with a prefilled message. */
+export function whatsappHref(raw: string | null | undefined, text?: string): string | null {
+  let digits = (raw ?? "").replace(/\D/g, "");
+  if (digits.length === 10) digits = `91${digits}`;
+  if (digits.length < 10) return null;
+  return `https://wa.me/${digits}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+}
+
+/** True while the browser reports no network — drives the offline banner. */
+export function useOnline(): boolean {
+  const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine !== false));
+  useEffect(() => {
+    const up = () => setOnline(true);
+    const down = () => setOnline(false);
+    window.addEventListener("online", up);
+    window.addEventListener("offline", down);
+    return () => {
+      window.removeEventListener("online", up);
+      window.removeEventListener("offline", down);
+    };
+  }, []);
+  return online;
 }

@@ -25,14 +25,26 @@ function authHeader(): Record<string, string> {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    ...options,
-    headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...authHeader(),
-      ...(options.headers || {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, {
+      ...options,
+      headers: {
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...authHeader(),
+        ...(options.headers || {}),
+      },
+    });
+  } catch {
+    // No response at all — offline, weak signal, or the server is waking up.
+    throw new ApiError(
+      navigator.onLine === false
+        ? "You're offline. Please check your internet connection and try again."
+        : "Couldn't reach the restaurant. Please check your connection and try again.",
+      0,
+      "NETWORK_ERROR"
+    );
+  }
 
   if (res.status === 204) return undefined as T;
 
@@ -54,7 +66,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         window.location.href = "/verify";
       }
     }
-    const message = body?.error?.message || `Request failed (${res.status})`;
+    const message =
+      body?.error?.message ||
+      (res.status >= 500 ? "Something went wrong on our side. Please try again in a moment." : `Request failed (${res.status})`);
     throw new ApiError(message, res.status, body?.error?.code, body?.error?.details);
   }
 
