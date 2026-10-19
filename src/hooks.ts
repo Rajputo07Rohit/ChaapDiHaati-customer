@@ -114,6 +114,13 @@ export function rumaliNeedsMain(lines: { menuItemId: string; name: string }[], c
   return !lines.some((l) => !isRumali(l) && /tandoori|momo/i.test(categoryOf.get(l.menuItemId) ?? ""));
 }
 
+/** Mirrors the server rule: beverages need at least one food item (anything that isn't a beverage or an extra) in the cart. */
+export function beveragesNeedFood(lines: { menuItemId: string }[], categoryOf: Map<string, string>): boolean {
+  const cat = (l: { menuItemId: string }) => categoryOf.get(l.menuItemId) ?? "";
+  if (!lines.some((l) => /beverage|drink/i.test(cat(l)))) return false;
+  return !lines.some((l) => !/beverage|drink|extra/i.test(cat(l)));
+}
+
 /** Business contact details (shared cache with the footer). */
 export function useBusinessInfo() {
   return useQuery({

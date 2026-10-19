@@ -8,7 +8,7 @@ import { AppliedPromo, CustomerProfile, MenuCategory, OrderRow } from "../api/ty
 import { DeliveryTimeNotice } from "./DeliveryTimeNotice";
 import { CashfreePaymentPanel } from "./CashfreePaymentPanel";
 import { ConfirmOrderDialog } from "./ConfirmOrderDialog";
-import { rumaliNeedsMain, useStoreStatus } from "../hooks";
+import { beveragesNeedFood, rumaliNeedsMain, useStoreStatus } from "../hooks";
 import { CartLine, useCart } from "../context/CartContext";
 import { useCustomerAuth } from "../context/CustomerAuthContext";
 import { QuantityStepper } from "./QuantityStepper";
@@ -40,11 +40,11 @@ function estimateDeliveryFee(subtotalPaise: number): number {
   return 0;
 }
 
-/** Packing charge per plate — display mirror of the backend's packingFeeFor (the backend decides what's charged). */
+/** Packing charge per plate (never for rolls) — display mirror of the backend's packingFeeFor (the backend decides what's charged). */
 const PACKING_FEE_PAISE = { HALF: 500, FULL: 900, SINGLE: 0 } as const;
 
-function estimatePackingFee(lines: CartLine[]): number {
-  return lines.reduce((s, l) => s + PACKING_FEE_PAISE[l.priceType] * l.quantity, 0);
+function estimatePackingFee(lines: CartLine[], categoryOf: Map<string, string>): number {
+  return lines.reduce((s, l) => s + (/roll/i.test(categoryOf.get(l.menuItemId) ?? "") ? 0 : PACKING_FEE_PAISE[l.priceType] * l.quantity), 0);
 }
 
 /**
@@ -95,11 +95,12 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   const categoryOf = new Map<string, string>();
   for (const c of menuData?.categories ?? []) for (const i of c.items) categoryOf.set(i.id, c.name);
   const rumaliOnly = rumaliNeedsMain(lines, categoryOf);
+  const drinksOnly = beveragesNeedFood(lines, categoryOf);
   // Items that sold out (or left the menu) while sitting in the cart — caught here, not as an error at checkout.
   const menuStatus = new Map<string, string>();
   for (const c of menuData?.categories ?? []) for (const i of c.items) menuStatus.set(i.id, i.status);
   const soldOutKeys = menuData ? lines.filter((l) => menuStatus.get(l.menuItemId) !== "ACTIVE").map((l) => l.key) : [];
-  const blocked = !store.isOpen || rumaliOnly || soldOutKeys.length > 0;
+  const blocked = !store.isOpen || rumaliOnly || drinksOnly || soldOutKeys.length > 0;
   const navigate = useNavigate();
 
   const [orderType, setOrderType] = useState<OrderType>("TAKEAWAY");
@@ -163,7 +164,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
 
   const deliveryFee = orderType === "DELIVERY" ? estimateDeliveryFee(totalPaise) : 0;
   const packingApplies = orderType !== "DINE_IN";
-  const packingFee = packingApplies && packing ? estimatePackingFee(lines) : 0;
+  const packingFee = packingApplies && packing ? estimatePackingFee(lines, categoryOf) : 0;
   const discountPaise = appliedPromo?.discount_paise ?? 0;
   const grandTotal = Math.max(0, totalPaise + deliveryFee + packingFee - discountPaise);
 
@@ -678,14 +679,14 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                   )}
                 </div>
 
-                {packingApplies && estimatePackingFee(lines) > 0 && (
+                {packingApplies && estimatePackingFee(lines, categoryOf) > 0 && (
                   <div>
                     <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-stone-200 px-4 py-3 dark:border-stone-700">
                       <span className="flex items-center gap-2 text-sm text-stone-700 dark:text-stone-200">
                         <Package size={16} className="text-brand-600 dark:text-brand-400" />
                         <span>
                           <span className="font-medium">Packing</span>{" "}
-                          <span className="text-stone-500 dark:text-stone-400">· {formatRupees(estimatePackingFee(lines))}</span>
+                          <span className="text-stone-500 dark:text-stone-400">· {formatRupees(estimatePackingFee(lines, categoryOf))}</span>
                           <span className="block text-xs text-stone-400">₹5 per half plate · ₹9 per full plate</span>
                         </span>
                       </span>
@@ -778,6 +779,11 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                   Remove them
                 </button>
               </div>
+            )}
+            {store.isOpen && drinksOnly && (
+              <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                Beverages can only be ordered with food — add a chaap, momo, roll or any other dish to continue.
+              </p>
             )}
             {store.isOpen && rumaliOnly && (
               <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
