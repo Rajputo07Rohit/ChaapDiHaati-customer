@@ -270,6 +270,12 @@ export function OrderConfirmation() {
                   <span>{formatRupees(order.delivery_fee_paise)}</span>
                 </div>
               )}
+              {(order.packing_fee_paise ?? 0) > 0 && (
+                <div className="flex justify-between text-stone-500">
+                  <span>Packing</span>
+                  <span>{formatRupees(order.packing_fee_paise!)}</span>
+                </div>
+              )}
               {order.delivery_address && <p className="border-t border-stone-200 pt-2 text-xs text-stone-500 dark:border-stone-700">Deliver to: {order.delivery_address}</p>}
             </div>
           )}

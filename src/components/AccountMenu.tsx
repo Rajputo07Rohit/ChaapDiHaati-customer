@@ -45,6 +45,12 @@ export function AccountMenu() {
         toast("Order notifications turned off.");
       } else {
         const next = await enablePush();
+        if (next === "unsupported") {
+          // Keep the row visible (as Off) and say why, instead of it silently vanishing.
+          setPush("off");
+          toast.error("Order notifications aren't available right now.");
+          return;
+        }
         setPush(next);
         if (next === "on") toast.success("You'll get order updates as notifications.");
         else if (next === "denied") toast.error("Notifications are blocked — allow them for this site in your browser settings.");

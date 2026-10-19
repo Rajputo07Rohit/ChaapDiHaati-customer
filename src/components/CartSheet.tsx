@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, LocateFixed, MapPin, PencilLine, Tag, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, LocateFixed, MapPin, Package, PencilLine, Tag, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { api, ApiError } from "../api/client";
 import { AppliedPromo, CustomerProfile, MenuCategory, OrderRow } from "../api/types";
@@ -38,6 +38,13 @@ function estimateDeliveryFee(subtotalPaise: number): number {
   if (subtotalPaise < 10000) return 4000;
   if (subtotalPaise < FREE_DELIVERY_THRESHOLD_PAISE) return 3000;
   return 0;
+}
+
+/** Packing charge per plate — display mirror of the backend's packingFeeFor (the backend decides what's charged). */
+const PACKING_FEE_PAISE = { HALF: 500, FULL: 900, SINGLE: 0 } as const;
+
+function estimatePackingFee(lines: CartLine[]): number {
+  return lines.reduce((s, l) => s + PACKING_FEE_PAISE[l.priceType] * l.quantity, 0);
 }
 
 /**
@@ -104,6 +111,8 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [notes, setNotes] = useState("");
+  // Packing is on by default for takeaway/delivery; turning it off shows a caution.
+  const [packing, setPacking] = useState(true);
   // A returning customer's name and recent addresses, so checkout is a couple of taps.
   const { data: profile } = useQuery({
     queryKey: ["customer-profile"],
@@ -153,8 +162,10 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   if (!open) return null;
 
   const deliveryFee = orderType === "DELIVERY" ? estimateDeliveryFee(totalPaise) : 0;
+  const packingApplies = orderType !== "DINE_IN";
+  const packingFee = packingApplies && packing ? estimatePackingFee(lines) : 0;
   const discountPaise = appliedPromo?.discount_paise ?? 0;
-  const grandTotal = Math.max(0, totalPaise + deliveryFee - discountPaise);
+  const grandTotal = Math.max(0, totalPaise + deliveryFee + packingFee - discountPaise);
 
   async function applyPromo() {
     const code = promoInput.trim();
@@ -256,7 +267,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
 
   /** The whole order as the API wants it — also saved with an online payment so it can be placed even if this page is lost. */
   function orderPayload() {
-    const signature = JSON.stringify({ lines, orderType, customerName, tableLabel, deliveryAddress, coords, notes });
+    const signature = JSON.stringify({ lines, orderType, customerName, tableLabel, deliveryAddress, coords, notes, packing });
     return {
       orderType,
       customerName: customerName.trim() || undefined,
@@ -268,6 +279,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
       items: apiItems(lines),
       idempotencyKey: getIdempotencyKey(signature),
       promoCode: appliedPromo?.code,
+      packing: packingApplies ? packing : undefined,
     };
   }
 
@@ -280,7 +292,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
       toast.error("Payment isn't available right now. Please try Cash on Delivery.");
       return;
     }
-    const cartSignature = JSON.stringify({ lines, orderType, promo: appliedPromo?.code });
+    const cartSignature = JSON.stringify({ lines, orderType, promo: appliedPromo?.code, packing });
 
     // If the customer paid earlier but the order never got created (closed the
     // tab, lost network…), claim that payment instead of charging them twice.
@@ -410,6 +422,12 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                 <span>Delivery fee</span>
                 <span>{deliveryFee === 0 ? "Free" : formatRupees(deliveryFee)}</span>
               </div>
+              {packingFee > 0 && (
+                <div className="flex justify-between text-stone-500 dark:text-stone-400">
+                  <span>Packing</span>
+                  <span>{formatRupees(packingFee)}</span>
+                </div>
+              )}
               {appliedPromo && (
                 <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
                   <span>Coupon ({appliedPromo.code})</span>
@@ -660,6 +678,36 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                   )}
                 </div>
 
+                {packingApplies && estimatePackingFee(lines) > 0 && (
+                  <div>
+                    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-stone-200 px-4 py-3 dark:border-stone-700">
+                      <span className="flex items-center gap-2 text-sm text-stone-700 dark:text-stone-200">
+                        <Package size={16} className="text-brand-600 dark:text-brand-400" />
+                        <span>
+                          <span className="font-medium">Packing</span>{" "}
+                          <span className="text-stone-500 dark:text-stone-400">· {formatRupees(estimatePackingFee(lines))}</span>
+                          <span className="block text-xs text-stone-400">₹5 per half plate · ₹9 per full plate</span>
+                        </span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={packing}
+                        onChange={(e) => setPacking(e.target.checked)}
+                        className="h-5 w-5 shrink-0 accent-brand-600"
+                      />
+                    </label>
+                    {!packing && (
+                      <p className="mt-2 flex gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                        <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                        <span>
+                          Without packing, your food is handed over as-is. If it spills, leaks, gets cold or is damaged on the way, the
+                          restaurant won't be responsible. We recommend keeping packing on.
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <p className="mb-2 text-sm font-medium text-stone-700 dark:text-stone-300">Coupon</p>
                   {appliedPromo ? (
@@ -738,7 +786,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
             )}
             <div className="mb-2 flex items-center justify-between px-1">
               <span className="text-sm text-stone-500 dark:text-stone-400">
-                {orderType === "DELIVERY" ? "Total (incl. delivery)" : "Total"}
+                {orderType === "DELIVERY" ? (packingFee > 0 ? "Total (incl. delivery & packing)" : "Total (incl. delivery)") : packingFee > 0 ? "Total (incl. packing)" : "Total"}
                 {appliedPromo && <span className="ml-1.5 text-emerald-600 dark:text-emerald-400">· saved {formatRupees(discountPaise)}</span>}
               </span>
               <span className="text-lg font-bold text-stone-900 dark:text-stone-100">{formatRupees(grandTotal)}</span>

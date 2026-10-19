@@ -31,6 +31,13 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   REFUNDED: { label: "Refunded", className: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400" },
 };
 
+/** True while staff can still change this order (status moving, or a refund still settling) — so it's worth polling. */
+function isLive(o: Pick<OrderRow, "status" | "refund_status">): boolean {
+  if (o.status === "COMPLETED" || o.status === "DELIVERED") return false;
+  if (o.status === "CANCELLED" || o.status === "REFUNDED") return o.refund_status === "PENDING";
+  return true;
+}
+
 function StatusBadge({ status }: { status: string }) {
   const s = STATUS_LABEL[status] ?? { label: status, className: "bg-stone-200 text-stone-600" };
   return <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${s.className}`}>{s.label}</span>;
@@ -52,6 +59,8 @@ function OrderDetailSheet({ orderId, onClose }: { orderId: string; onClose: () =
   const { data, isLoading } = useQuery({
     queryKey: ["customer-order-detail", orderId],
     queryFn: () => api.get<{ order: OrderDetailRow }>(`/public/orders/${orderId}`),
+    // Live status while it's open; stops once nothing more can change.
+    refetchInterval: (q) => (!q.state.data || isLive(q.state.data.order) ? 5000 : false),
   });
   const order = data?.order;
   const reviewUrl = useReviewUrl();
@@ -138,6 +147,12 @@ function OrderDetailSheet({ orderId, onClose }: { orderId: string; onClose: () =
                     <span>{formatRupees(order.delivery_fee_paise)}</span>
                   </div>
                 )}
+                {(order.packing_fee_paise ?? 0) > 0 && (
+                  <div className="flex justify-between text-stone-500 dark:text-stone-400">
+                    <span>Packing</span>
+                    <span>{formatRupees(order.packing_fee_paise!)}</span>
+                  </div>
+                )}
                 {order.discount_paise > 0 && (
                   <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
                     <span>Coupon discount</span>
@@ -186,6 +201,8 @@ export function OrderHistory() {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["customer-orders"],
     queryFn: () => api.get<{ orders: OrderRow[] }>("/public/orders"),
+    // Keep statuses live while any order is still in progress (accepted, ready, refund settling…).
+    refetchInterval: (q) => (q.state.data?.orders.some(isLive) ? 5000 : false),
   });
 
   const orders = data?.orders ?? [];

@@ -46,6 +46,7 @@ export interface OrderRow {
   net_total_paise: number;
   subtotal_paise: number;
   delivery_fee_paise: number;
+  packing_fee_paise?: number;
   discount_paise: number;
   /** Only ever set when status is CANCELLED/REFUNDED — why the restaurant denied/cancelled the order. */
   cancel_reason: string | null;

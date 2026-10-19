@@ -29,8 +29,23 @@ function urlBase64ToBuffer(base64: string): ArrayBuffer {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0)).buffer as ArrayBuffer;
 }
 
+/** The server's push key, fetched once — null when the server isn't set up to send notifications. */
+let publicKeyPromise: Promise<string | null> | null = null;
+function getPublicKey(): Promise<string | null> {
+  publicKeyPromise ??= api.get<{ publicKey: string | null }>("/public/push/config").then(
+    (r) => r.publicKey,
+    (err) => {
+      publicKeyPromise = null; // a network blip shouldn't hide notifications for good
+      throw err;
+    }
+  );
+  return publicKeyPromise;
+}
+
 export async function getPushState(): Promise<PushState> {
   if (!supported()) return isIos() && !isStandalone() ? "needs-install" : "unsupported";
+  // Without a server key, turning notifications on can't work — don't offer it.
+  if (!(await getPublicKey())) return "unsupported";
   if (Notification.permission === "denied") return "denied";
   const reg = await navigator.serviceWorker.getRegistration();
   const sub = await reg?.pushManager.getSubscription();
@@ -41,7 +56,7 @@ export async function getPushState(): Promise<PushState> {
 export async function enablePush(): Promise<PushState> {
   if (!supported()) return isIos() && !isStandalone() ? "needs-install" : "unsupported";
   markPushAsked();
-  const { publicKey } = await api.get<{ publicKey: string | null }>("/public/push/config");
+  const publicKey = await getPublicKey();
   if (!publicKey) return "unsupported";
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return permission === "denied" ? "denied" : "off";
