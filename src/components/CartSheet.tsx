@@ -29,6 +29,9 @@ function lineUnitPaise(l: CartLine): number {
 
 const FREE_DELIVERY_THRESHOLD_PAISE = 15000;
 
+/** Online (Cashfree) payment is paused while the KYC issue is sorted — set back to false to show "Pay online" again. */
+const ONLINE_PAYMENT_PAUSED = true;
+
 /**
  * Client-side mirror of the backend's tiers, for display only — the
  * backend recomputes this itself and is the only source that actually
@@ -91,6 +94,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
     queryFn: () => api.get<{ cashfree: { enabled: boolean; testMode: boolean } }>("/public/orders/payment-config"),
     staleTime: 5 * 60_000,
   });
+  const onlinePayEnabled = !ONLINE_PAYMENT_PAUSED && !!payConfig?.cashfree.enabled;
   const store = useStoreStatus();
   const categoryOf = new Map<string, string>();
   for (const c of menuData?.categories ?? []) for (const i of c.items) categoryOf.set(i.id, c.name);
@@ -454,7 +458,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
               >
                 {placing ? "Placing order…" : "Cash on Delivery"}
               </button>
-              {payConfig?.cashfree.enabled && (
+              {onlinePayEnabled && (
                 <button
                   onClick={() => askConfirm(payWithCashfree)}
                   disabled={placing || blocked}
@@ -475,13 +479,13 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                 </button>
               )}
             </div>
-            {payConfig?.cashfree.enabled && payConfig.cashfree.testMode && (
+            {onlinePayEnabled && payConfig?.cashfree.testMode && (
               <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                 <span className="font-semibold">Payments are in TEST mode — nothing is charged.</span> Use UPI ID{" "}
                 <span className="font-mono">testsuccess@gocash</span> (success) or <span className="font-mono">testfailure@gocash</span> (failure).
               </p>
             )}
-            {payConfig && !payConfig.cashfree.enabled && (
+            {(ONLINE_PAYMENT_PAUSED || (payConfig && !payConfig.cashfree.enabled)) && (
               <p className="mt-4 rounded-xl bg-stone-100 px-4 py-3 text-xs text-stone-500 dark:bg-stone-800 dark:text-stone-400">
                 Online payment isn't available right now — please choose Cash on Delivery.
               </p>
@@ -757,7 +761,9 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
 
                 <p className="rounded-xl bg-stone-100 px-4 py-2.5 text-xs text-stone-500 dark:bg-stone-800 dark:text-stone-400">
                   {orderType === "DELIVERY"
-                    ? "Choose Cash on Delivery or pay online on the next step."
+                    ? onlinePayEnabled
+                      ? "Choose Cash on Delivery or pay online on the next step."
+                      : "Pay by Cash on Delivery when your order arrives."
                     : "Pay at the counter when your order is ready — no online payment needed."}
                 </p>
               </div>
