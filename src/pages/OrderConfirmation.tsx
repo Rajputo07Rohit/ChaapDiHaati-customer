@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, CheckCircle2, ChevronDown, Clock, MessageCircle, Phone, RotateCcw, XCircle } from "lucide-react";
+import { Bell, CheckCircle2, ChevronDown, Clock, MessageCircle, Phone, RotateCcw, Wallet, XCircle } from "lucide-react";
 import { api, ApiError } from "../api/client";
 import { OrderDetailRow } from "../api/types";
 import { ReadyTimer } from "../components/ReadyTimer";
 import { ReviewPrompt, markReviewPrompted, wasReviewPrompted } from "../components/ReviewPrompt";
 import { RateOrder } from "../components/RateOrder";
-import { telHref, useBusinessInfo, whatsappHref } from "../hooks";
+import { formatClockDuration, telHref, useBusinessInfo, whatsappHref } from "../hooks";
 import { enablePush, getPushState, PushState, wasPushAsked, markPushAsked } from "../utils/push";
 import logo from "../assets/logo.png";
 
@@ -17,6 +17,59 @@ function formatRupees(paise: number): string {
 
 const DELIVERY_STEPS = ["Placed", "Accepted", "Preparing", "On the way", "Delivered"];
 const PICKUP_STEPS = ["Placed", "Accepted", "Preparing", "Ready", "Done"];
+const PREPAID_STEPS = ["Placed", "Paid", "Preparing", "Ready", "Done"];
+
+/** The big "show this at the counter" card for a prepaid (stall dine-in) order still waiting for payment. */
+function PayAtCounterCard({ orderNumber, amountPaise, payBy }: { orderNumber: number; amountPaise: number; payBy: string | null | undefined }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const secondsLeft = payBy ? Math.max(0, Math.floor((new Date(payBy).getTime() - now) / 1000)) : null;
+  const hurry = secondsLeft != null && secondsLeft < 180;
+  return (
+    <div className="mt-5 w-full max-w-xs overflow-hidden rounded-3xl text-left shadow-lg ring-1 ring-amber-300 dark:ring-amber-700 lg:max-w-md">
+      <div className="bg-gradient-to-br from-amber-400 to-orange-500 px-5 py-4 text-white">
+        <p className="text-xs font-semibold uppercase tracking-wider text-amber-50">Show this at the stall counter</p>
+        <div className="mt-2 flex items-end justify-between gap-3">
+          <div>
+            <p className="text-xs text-amber-50">Order</p>
+            <p className="text-4xl font-black leading-none tabular-nums">#{orderNumber}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-amber-50">Amount to pay</p>
+            <p className="text-3xl font-black leading-none tabular-nums">{formatRupees(amountPaise)}</p>
+          </div>
+        </div>
+      </div>
+      <div className="space-y-2.5 bg-white px-5 py-4 text-sm text-stone-700 dark:bg-stone-900 dark:text-stone-200">
+        <p className="flex items-center gap-2">
+          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-amber-100 text-xs font-bold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">1</span>
+          Pay at the counter — cash or UPI
+        </p>
+        <p className="flex items-center gap-2">
+          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-amber-100 text-xs font-bold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">2</span>
+          Staff confirm your payment
+        </p>
+        <p className="flex items-center gap-2">
+          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-amber-100 text-xs font-bold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">3</span>
+          We start preparing right away
+        </p>
+        {secondsLeft != null && (
+          <p
+            className={`mt-1 rounded-xl px-3 py-2 text-xs font-medium ${
+              hurry ? "bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300" : "bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300"
+            }`}
+            aria-live="polite"
+          >
+            Please pay within <b className="tabular-nums">{formatClockDuration(secondsLeft).replace(/^00:/, "")}</b> — unpaid orders are cancelled automatically.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function stepIndex(status: string): number {
   switch (status) {
@@ -62,7 +115,9 @@ export function OrderConfirmation() {
   const waiting = !status || status === "PENDING_ACCEPTANCE";
   const finished = !!status && FINISHED.includes(status);
   const isDelivery = order?.order_type === "DELIVERY";
-  const steps = isDelivery ? DELIVERY_STEPS : PICKUP_STEPS;
+  const prepaid = !!order?.prepayment_required;
+  const awaitingPayment = prepaid && waiting && !denied;
+  const steps = isDelivery ? DELIVERY_STEPS : prepaid ? PREPAID_STEPS : PICKUP_STEPS;
   const step = status ? stepIndex(status) : 0;
 
   // Ask for a Google rating once the order is done — only once per order, and
@@ -97,7 +152,12 @@ export function OrderConfirmation() {
   let sub = "Waiting for the restaurant to accept your order…";
   let Icon = Clock;
   let iconClass = "text-amber-500 animate-pulse";
-  if (denied) {
+  if (awaitingPayment) {
+    headline = "Pay at the counter";
+    sub = "Your order is saved. Pay at the stall counter to confirm it — we start preparing as soon as the payment is confirmed.";
+    Icon = Wallet;
+    iconClass = "text-amber-500 animate-pulse";
+  } else if (denied) {
     headline = "Order not accepted";
     sub = order?.cancel_reason ?? "The restaurant could not take your order.";
     Icon = XCircle;
@@ -105,8 +165,8 @@ export function OrderConfirmation() {
   } else if (!waiting) {
     Icon = CheckCircle2;
     iconClass = "text-brand-600";
-    headline = "Order accepted!";
-    sub = "The kitchen is on it.";
+    headline = prepaid ? "Payment received!" : "Order accepted!";
+    sub = prepaid ? "Your order is confirmed — the kitchen is on it." : "The kitchen is on it.";
     if (status === "OUT_FOR_DELIVERY") {
       headline = "Out for delivery";
       sub = "Your order is on the way.";
@@ -165,6 +225,8 @@ export function OrderConfirmation() {
         </div>
       )}
 
+      {order && awaitingPayment && <PayAtCounterCard orderNumber={order.order_number} amountPaise={order.net_total_paise} payBy={order.pay_by} />}
+
       {order && <ReadyTimer order={order} />}
 
       {order?.rider && (
@@ -181,7 +243,7 @@ export function OrderConfirmation() {
         </div>
       )}
 
-      {order && (
+      {order && !awaitingPayment && (
         <>
           <p className="mt-4 text-3xl font-bold text-stone-900 dark:text-stone-100">{formatRupees(order.net_total_paise)}</p>
           {order.discount_paise > 0 && (
@@ -201,15 +263,17 @@ export function OrderConfirmation() {
         </div>
       )}
 
-      {waiting && (
+      {waiting && !prepaid && (
         <p className="mt-4 max-w-xs text-xs text-stone-500 dark:text-stone-400 lg:max-w-md lg:text-sm">
           This usually takes a couple of minutes. If it isn't accepted in about 5 minutes it will be cancelled automatically
           {paid ? " and your payment refunded in full." : "."}
         </p>
       )}
-      {order && !denied && !finished && (
+      {order && !denied && !finished && !awaitingPayment && (
         <p className="mt-4 max-w-xs rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-700 dark:bg-stone-800 dark:text-brand-400 lg:max-w-md">
-          {paid
+          {paid && prepaid
+            ? "✓ Paid at the counter — sit back, your food is being prepared."
+            : paid
             ? "✓ Paid online — nothing to pay on arrival."
             : isDelivery
               ? `Please keep ${formatRupees(order.net_total_paise)} ready to pay the rider (cash or UPI).`

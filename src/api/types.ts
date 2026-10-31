@@ -34,6 +34,8 @@ export interface MenuCategory {
   name: string;
   sort_order: number;
   active: boolean;
+  /** MAIN = restaurant menu, STALL = street-stall menu (shown only while stall ordering is on). */
+  channel?: "MAIN" | "STALL";
   items: MenuItemRow[];
 }
 
@@ -41,6 +43,11 @@ export interface OrderRow {
   id: string;
   order_number: number;
   order_type: string;
+  channel?: "MAIN" | "STALL";
+  /** Stall dine-in: the customer pays at the counter first; staff confirm the payment, then it goes to the kitchen. */
+  prepayment_required?: boolean;
+  /** While a prepaid order waits for payment: when it will be cancelled if still unpaid. */
+  pay_by?: string | null;
   status: string;
   payment_status: string;
   net_total_paise: number;

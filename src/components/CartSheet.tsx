@@ -1,14 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, LocateFixed, MapPin, Package, PencilLine, Tag, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, LocateFixed, MapPin, Package, PencilLine, Plus, Tag, Trash2, Wallet, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { api, ApiError } from "../api/client";
 import { AppliedPromo, CustomerProfile, MenuCategory, OrderRow } from "../api/types";
 import { DeliveryTimeNotice } from "./DeliveryTimeNotice";
 import { CashfreePaymentPanel } from "./CashfreePaymentPanel";
 import { ConfirmOrderDialog } from "./ConfirmOrderDialog";
-import { beveragesNeedFood, rumaliNeedsMain, useStoreStatus } from "../hooks";
+import { beveragesNeedFood, categoriesForMode, rumaliNeedsMain, useStoreStatus } from "../hooks";
 import { CartLine, useCart } from "../context/CartContext";
 import { useCustomerAuth } from "../context/CustomerAuthContext";
 import { QuantityStepper } from "./QuantityStepper";
@@ -20,6 +20,11 @@ type OrderType = "DINE_IN" | "TAKEAWAY" | "DELIVERY";
 
 function formatRupees(paise: number): string {
   return `₹${(paise / 100).toFixed(paise % 100 === 0 ? 0 : 2)}`;
+}
+
+/** "Half · " / "Full · " before the price; nothing for single-portion items. */
+function sizeLabel(l: CartLine): string {
+  return l.priceType === "HALF" ? "Half · " : l.priceType === "FULL" ? "Full · " : "";
 }
 
 /** Unit price including this line's selected add-ons. */
@@ -76,18 +81,24 @@ function apiItems(lines: CartLine[]) {
     priceType: l.priceType,
     quantity: l.quantity,
     addonIds: l.addons.map((a) => a.id),
-    specialInstructions: l.note?.trim() || undefined,
+    // An extra meant for one dish tells the kitchen which one.
+    specialInstructions: [l.forName && `For: ${l.forName}`, l.note?.trim()].filter(Boolean).join(" — ").slice(0, 200) || undefined,
   }));
 }
 
 export function CartSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { lines, addItem, setQuantity, removeItem, setNote, replaceAll, totalPaise, clear } = useCart();
+  const { lines, addItem, setQuantity, removeItem, setNote, attachExtra, replaceAll, totalPaise, clear } = useCart();
   const [editingNote, setEditingNote] = useState<string | null>(null);
+  // Which dish's "Add extra" chooser is open.
+  const [extrasFor, setExtrasFor] = useState<string | null>(null);
   const { data: menuData } = useQuery({
     queryKey: ["public-menu"],
     queryFn: () => api.get<{ categories: MenuCategory[] }>("/public/menu"),
   });
-  const extrasItems = menuData?.categories.find((c) => c.name === "Extras")?.items.filter((i) => i.status === "ACTIVE" && !/delivery/i.test(i.name)) ?? [];
+  const store = useStoreStatus();
+  // Only the menu being served right now — items left in the cart from the other (restaurant/stall) menu show as unavailable below.
+  const menuCategories = categoriesForMode(menuData?.categories ?? [], store.stall);
+  const extrasItems = menuCategories.find((c) => c.name === "Extras")?.items.filter((i) => i.status === "ACTIVE" && !/delivery/i.test(i.name)) ?? [];
   const { phone } = useCustomerAuth();
   const { data: payConfig } = useQuery({
     queryKey: ["payment-config"],
@@ -95,19 +106,35 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
     staleTime: 5 * 60_000,
   });
   const onlinePayEnabled = !ONLINE_PAYMENT_PAUSED && !!payConfig?.cashfree.enabled;
-  const store = useStoreStatus();
   const categoryOf = new Map<string, string>();
-  for (const c of menuData?.categories ?? []) for (const i of c.items) categoryOf.set(i.id, c.name);
+  for (const c of menuCategories) for (const i of c.items) categoryOf.set(i.id, c.name);
+  // Extras (cream, cheese…) can be attached to one dish; they're listed under it instead of on their own.
+  const isExtraLine = (l: CartLine) => /extra/i.test(categoryOf.get(l.menuItemId) ?? "");
+  const foodLines = lines.filter((l) => !isExtraLine(l));
+  const topLines = lines.filter((l) => !l.forKey || !lines.some((p) => p.key === l.forKey));
   const rumaliOnly = rumaliNeedsMain(lines, categoryOf);
   const drinksOnly = beveragesNeedFood(lines, categoryOf);
   // Items that sold out (or left the menu) while sitting in the cart — caught here, not as an error at checkout.
   const menuStatus = new Map<string, string>();
-  for (const c of menuData?.categories ?? []) for (const i of c.items) menuStatus.set(i.id, i.status);
+  for (const c of menuCategories) for (const i of c.items) menuStatus.set(i.id, i.status);
   const soldOutKeys = menuData ? lines.filter((l) => menuStatus.get(l.menuItemId) !== "ACTIVE").map((l) => l.key) : [];
   const blocked = !store.isOpen || rumaliOnly || drinksOnly || soldOutKeys.length > 0;
   const navigate = useNavigate();
 
   const [orderType, setOrderType] = useState<OrderType>("TAKEAWAY");
+  // The stall only does the order types the admin switched on (dine-in and/or delivery).
+  const orderTypes: OrderType[] = store.stall.active
+    ? [...(store.stall.dineIn ? (["DINE_IN"] as const) : []), ...(store.stall.delivery ? (["DELIVERY"] as const) : [])]
+    : ["DINE_IN", "TAKEAWAY", "DELIVERY"];
+  // Whenever the offered types change (stall switched on/off), start again from the sensible default —
+  // takeaway for the restaurant, the first stall option for the stall — instead of keeping e.g. a stale "Delivery".
+  const orderTypesKey = orderTypes.join();
+  const lastOrderTypesKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastOrderTypesKey.current === orderTypesKey) return;
+    lastOrderTypesKey.current = orderTypesKey;
+    setOrderType(store.stall.active ? orderTypes[0] : "TAKEAWAY");
+  }, [orderTypesKey]);
   const [customerName, setCustomerName] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
   const [tableLabel, setTableLabel] = useState("");
@@ -166,6 +193,8 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
 
   if (!open) return null;
 
+  // Stall dine-in is pay-first: the order only goes to the kitchen once staff confirm the payment at the counter.
+  const payFirst = store.stall.active && orderType === "DINE_IN";
   const deliveryFee = orderType === "DELIVERY" ? estimateDeliveryFee(totalPaise) : 0;
   const packingApplies = orderType !== "DINE_IN";
   const packingFee = packingApplies && packing ? estimatePackingFee(lines, categoryOf) : 0;
@@ -497,55 +526,139 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
               <p className="mt-6 text-center text-stone-400">Your cart is empty.</p>
             ) : (
               <div className="space-y-3">
-                {lines.map((l) => (
-                  <div key={l.key} className="flex items-start justify-between gap-2 rounded-xl bg-stone-50 p-3 dark:bg-stone-800">
-                    <div>
-                      <p className="font-medium text-stone-900 dark:text-stone-100">
-                        {l.name}
-                        {soldOutKeys.includes(l.key) && (
-                          <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Sold out</span>
-                        )}
-                      </p>
-                      <p className="text-xs text-stone-500 dark:text-stone-400">
-                        {l.priceType} · {formatRupees(lineUnitPaise(l))}
-                      </p>
-                      {l.addons.length > 0 && (
-                        <p className="text-xs text-stone-400">+ {l.addons.map((a) => a.name).join(", ")}</p>
+                {topLines.map((l) => {
+                  const attached = lines.filter((x) => x.forKey === l.key);
+                  const canAttach = isExtraLine(l) && !l.forKey && foodLines.length > 0;
+                  return (
+                    <div key={l.key} className="rounded-xl bg-stone-50 p-3 dark:bg-stone-800">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-medium text-stone-900 dark:text-stone-100">
+                            {l.name}
+                            {soldOutKeys.includes(l.key) && (
+                              <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                                {menuStatus.has(l.menuItemId) ? "Sold out" : "Not available"}
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-xs text-stone-500 dark:text-stone-400">
+                            {sizeLabel(l)}
+                            {formatRupees(lineUnitPaise(l))}
+                          </p>
+                          {l.addons.length > 0 && (
+                            <p className="text-xs text-stone-400">+ {l.addons.map((a) => a.name).join(", ")}</p>
+                          )}
+                          {canAttach && (
+                            <label className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                              For which item?
+                              <select
+                                value=""
+                                onChange={(e) => {
+                                  const target = foodLines.find((f) => f.key === e.target.value);
+                                  if (target) attachExtra(l.key, { key: target.key, name: target.name });
+                                }}
+                                className="rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs text-stone-800 dark:border-amber-700 dark:bg-stone-900 dark:text-stone-100"
+                              >
+                                <option value="">Whole order</option>
+                                {foodLines.map((f) => (
+                                  <option key={f.key} value={f.key}>
+                                    {f.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          {editingNote === l.key ? (
+                            <input
+                              autoFocus
+                              defaultValue={l.note ?? ""}
+                              maxLength={200}
+                              onBlur={(e) => {
+                                setNote(l.key, e.target.value);
+                                setEditingNote(null);
+                              }}
+                              onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                              placeholder="e.g. less spicy, no onion"
+                              className="mt-1.5 w-full rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+                            />
+                          ) : (
+                            <div className="mt-1 flex flex-wrap items-center gap-x-3">
+                              <button
+                                onClick={() => setEditingNote(l.key)}
+                                className="inline-flex min-h-[28px] items-center gap-1 text-xs font-medium text-brand-600 dark:text-brand-400"
+                              >
+                                <PencilLine size={12} /> {l.note ? <span className="italic text-stone-500 dark:text-stone-400">“{l.note}”</span> : "Add cooking note"}
+                              </button>
+                              {!isExtraLine(l) && extrasItems.length > 0 && (
+                                <button
+                                  onClick={() => setExtrasFor(extrasFor === l.key ? null : l.key)}
+                                  aria-expanded={extrasFor === l.key}
+                                  className="inline-flex min-h-[28px] items-center gap-1 text-xs font-medium text-brand-600 dark:text-brand-400"
+                                >
+                                  <Plus size={12} /> Add extra
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <QuantityStepper value={l.quantity} onChange={(q) => setQuantity(l.key, q)} />
+                          <button onClick={() => removeItem(l.key)} className="-mr-1 p-2 text-stone-400" aria-label={`Remove ${l.name}`}>
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {extrasFor === l.key && (
+                        <div className="mt-2 rounded-lg bg-white p-2.5 ring-1 ring-stone-200 dark:bg-stone-900 dark:ring-stone-700">
+                          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-400">Extras for {l.name}</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {extrasItems.map((item) => {
+                              const price = item.prices.find((p) => p.price_type === "SINGLE") ?? item.prices[0];
+                              if (!price) return null;
+                              return (
+                                <button
+                                  key={item.id}
+                                  onClick={() => {
+                                    addItem(
+                                      { menuItemId: item.id, name: item.name, priceType: price.price_type, unitPricePaise: price.price_paise, addons: [], forKey: l.key, forName: l.name },
+                                      1
+                                    );
+                                    toast.success(`${item.name} added for ${l.name}`);
+                                  }}
+                                  className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 active:scale-95 dark:bg-brand-900/30 dark:text-brand-300"
+                                >
+                                  + {item.name} ({formatRupees(price.price_paise)})
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       )}
-                      {editingNote === l.key ? (
-                        <input
-                          autoFocus
-                          defaultValue={l.note ?? ""}
-                          maxLength={200}
-                          onBlur={(e) => {
-                            setNote(l.key, e.target.value);
-                            setEditingNote(null);
-                          }}
-                          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-                          placeholder="e.g. less spicy, no onion"
-                          className="mt-1.5 w-full rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
-                        />
-                      ) : (
-                        <button
-                          onClick={() => setEditingNote(l.key)}
-                          className="mt-1 inline-flex min-h-[28px] items-center gap-1 text-xs font-medium text-brand-600 dark:text-brand-400"
-                        >
-                          <PencilLine size={12} /> {l.note ? <span className="italic text-stone-500 dark:text-stone-400">“{l.note}”</span> : "Add cooking note"}
-                        </button>
-                      )}
+
+                      {attached.map((x) => (
+                        <div key={x.key} className="mt-2 flex items-center justify-between gap-2 border-l-2 border-brand-300 pl-3 dark:border-brand-700">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-stone-800 dark:text-stone-200">{x.name}</p>
+                            <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                              for {l.name} · {formatRupees(lineUnitPaise(x))}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <QuantityStepper value={x.quantity} onChange={(q) => setQuantity(x.key, q)} />
+                            <button onClick={() => removeItem(x.key)} className="-mr-1 p-2 text-stone-400" aria-label={`Remove ${x.name} for ${l.name}`}>
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <div className="flex items-center gap-1">
-                      <QuantityStepper value={l.quantity} onChange={(q) => setQuantity(l.key, q)} />
-                      <button onClick={() => removeItem(l.key)} className="-mr-1 p-2 text-stone-400" aria-label="Remove item">
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
-            {lines.length > 0 && extrasItems.length > 0 && (
+            {lines.length > 0 && extrasItems.length > 0 && foodLines.length === 0 && (
               <div className="mt-4 flex flex-wrap items-center gap-1.5">
                 <span className="shrink-0 text-xs text-stone-400">Quick add:</span>
                 {extrasItems.map((item) => {
@@ -587,7 +700,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                 <div>
                   <p className="mb-2 text-sm font-medium text-stone-700 dark:text-stone-300">Order type</p>
                   <div className="flex gap-2">
-                    {(["DINE_IN", "TAKEAWAY", "DELIVERY"] as const).map((t) => (
+                    {orderTypes.map((t) => (
                       <button
                         key={t}
                         onClick={() => {
@@ -601,6 +714,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                             : "border border-stone-200 bg-white text-stone-600 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300"
                         }`}
                       >
+                        {store.stall.active && "Stall "}
                         {t === "DINE_IN" ? "Dine-in" : t === "TAKEAWAY" ? "Takeaway" : "Delivery"}
                       </button>
                     ))}
@@ -609,7 +723,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                     <input
                       value={tableLabel}
                       onChange={(e) => setTableLabel(e.target.value)}
-                      placeholder="Table number (optional)"
+                      placeholder={store.stall.active ? "Where are you at the stall? (optional)" : "Table number (optional)"}
                       className="mt-2 w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100"
                     />
                   )}
@@ -780,7 +894,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
             )}
             {soldOutKeys.length > 0 && (
               <div className="mb-3 flex items-center justify-between gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:bg-red-900/20 dark:text-red-300">
-                <span>Some items just sold out.</span>
+                <span>{lines.some((l) => soldOutKeys.includes(l.key) && !menuStatus.has(l.menuItemId)) ? (store.stall.active ? "Some items aren't on the stall menu." : "Some items aren't available right now.") : "Some items just sold out."}</span>
                 <button onClick={() => replaceAll(lines.filter((l) => !soldOutKeys.includes(l.key)))} className="min-h-[32px] rounded-full bg-red-600 px-3 font-semibold text-white">
                   Remove them
                 </button>
@@ -796,6 +910,19 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                 Rumali roti needs a Soya, Paneer or Mushroom Tandoori or Momo in your order — add one to continue.
               </p>
             )}
+            {payFirst && store.isOpen && (
+              <div className="mb-3 flex gap-3 rounded-2xl bg-amber-50 px-3.5 py-3 ring-1 ring-amber-200 dark:bg-amber-900/20 dark:ring-amber-800">
+                <Wallet size={20} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <div className="text-xs text-amber-900 dark:text-amber-200">
+                  <p className="text-sm font-bold">Pay first, then we cook</p>
+                  <p className="mt-0.5">
+                    After placing, pay <b>{formatRupees(grandTotal)}</b> at the stall counter (cash or UPI). Your order is confirmed and goes to the
+                    kitchen as soon as the payment is confirmed.
+                  </p>
+                  <p className="mt-1 opacity-80">Order ke baad counter par payment karein — payment confirm hote hi order banna shuru hoga.</p>
+                </div>
+              </div>
+            )}
             <div className="mb-2 flex items-center justify-between px-1">
               <span className="text-sm text-stone-500 dark:text-stone-400">
                 {orderType === "DELIVERY" ? (packingFee > 0 ? "Total (incl. delivery & packing)" : "Total (incl. delivery)") : packingFee > 0 ? "Total (incl. packing)" : "Total"}
@@ -808,7 +935,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
               disabled={placing || blocked}
               className="w-full rounded-2xl bg-brand-600 py-3.5 font-semibold text-white disabled:opacity-60"
             >
-              {placing ? "Placing order…" : !store.isOpen ? "Store is closed" : "Place order"}
+              {placing ? "Placing order…" : !store.isOpen ? "Store is closed" : payFirst ? "Place order · Pay at counter" : "Place order"}
             </button>
           </div>
         )}
@@ -830,6 +957,8 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
           lines={lines}
           totalPaise={grandTotal}
           orderType={orderType}
+          payFirst={payFirst}
+          atStall={store.stall.active}
           busy={placing}
           onCancel={() => setConfirmAction(null)}
           onConfirm={() => {

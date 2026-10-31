@@ -38,8 +38,11 @@ function isLive(o: Pick<OrderRow, "status" | "refund_status">): boolean {
   return true;
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const s = STATUS_LABEL[status] ?? { label: status, className: "bg-stone-200 text-stone-600" };
+function StatusBadge({ status, prepaid }: { status: string; prepaid?: boolean }) {
+  const s =
+    prepaid && status === "PENDING_ACCEPTANCE"
+      ? { label: "Pay at counter", className: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300" }
+      : STATUS_LABEL[status] ?? { label: status, className: "bg-stone-200 text-stone-600" };
   return <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${s.className}`}>{s.label}</span>;
 }
 
@@ -102,7 +105,7 @@ function OrderDetailSheet({ orderId, onClose }: { orderId: string; onClose: () =
           {order && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <StatusBadge status={order.status} />
+                <StatusBadge status={order.status} prepaid={order.prepayment_required} />
                 <span className="text-xs text-stone-500 dark:text-stone-400">{formatDate(order.created_at)}</span>
               </div>
               <div className="flex justify-center">
@@ -242,7 +245,7 @@ export function OrderHistory() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-stone-900 dark:text-stone-100">Order #{o.order_number}</span>
-                  <StatusBadge status={o.status} />
+                  <StatusBadge status={o.status} prepaid={o.prepayment_required} />
                 </div>
                 <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
                   {o.order_type.replace("_", "-")} · {formatDate(o.created_at)}

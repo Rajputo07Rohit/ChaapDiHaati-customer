@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, ClipboardList, Leaf, Moon, RefreshCw, Search, Sun } from "lucide-react";
+import { Bike, ChevronRight, ClipboardList, Leaf, Moon, RefreshCw, Search, Store, Sun, UtensilsCrossed } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { MenuCategory, OrderRow } from "../api/types";
-import { useBusinessInfo } from "../hooks";
+import { categoriesForMode, useBusinessInfo, useStoreStatus } from "../hooks";
 import { InstallPrompt } from "../components/AppBanners";
 import { useTheme } from "../context/ThemeContext";
 import { CategoryTabs } from "../components/CategoryTabs";
@@ -53,13 +53,15 @@ export function Menu() {
   const LIVE = ["PENDING_ACCEPTANCE", "CONFIRMED", "PREPARING", "READY", "OUT_FOR_DELIVERY"];
   const liveOrder = myOrders?.orders.find((o) => LIVE.includes(o.status) && Date.now() - new Date(o.created_at).getTime() < 6 * 3_600_000);
 
-  const categories = (data?.categories ?? []).filter((c) => c.items.length > 0);
+  const { stall, isOpen } = useStoreStatus();
+  const categories = categoriesForMode(data?.categories ?? [], stall).filter((c) => c.items.length > 0);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
 
   useEffect(() => {
-    if (categories.length > 0 && !activeCategory) setActiveCategory(categories[0].id);
+    // Also resets when the menu switches between restaurant and stall.
+    if (categories.length > 0 && !categories.some((c) => c.id === activeCategory)) setActiveCategory(categories[0].id);
   }, [categories, activeCategory]);
 
   const query = search.trim().toLowerCase();
@@ -116,9 +118,42 @@ export function Menu() {
         <BannerCarousel />
         <OffersBanner />
         <StoreStatusBanner />
+        {stall.active && (
+          <div
+            className={`mx-4 mb-3 rounded-2xl px-4 py-3 text-white shadow-md lg:mx-8 ${
+              isOpen ? "bg-gradient-to-r from-amber-400 to-orange-500" : "bg-gradient-to-r from-stone-500 to-stone-600"
+            }`}
+          >
+            <p className="flex items-center gap-2 font-bold">
+              <Store size={18} /> Desi Chaap Di Hatti — Stall Menu
+            </p>
+            <p className="mt-0.5 text-xs text-white/80">Authentic taste of Delhi. Desi swad har bite mein!</p>
+            {/* Closing the store closes the stall too — no "open" chips while ordering is paused. */}
+            {!isOpen ? (
+              <p className="mt-2 inline-flex rounded-full bg-white/20 px-2.5 py-1 text-xs font-semibold">Stall is closed right now</p>
+            ) : (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {stall.dineIn && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/25 px-2.5 py-1 text-xs font-semibold">
+                  <UtensilsCrossed size={12} /> Stall Dine-in
+                </span>
+              )}
+              {stall.delivery && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/25 px-2.5 py-1 text-xs font-semibold">
+                  <Bike size={12} /> Stall Delivery
+                </span>
+              )}
+            </div>
+            )}
+          </div>
+        )}
+        {isOpen && (
         <p className="mx-4 mb-3 rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-700 dark:bg-stone-800 dark:text-brand-400 lg:mx-8">
-          ⏱ Preparation takes about 15 min. Delivery may take more than 30 min depending on distance and traffic.
+          {stall.active && !stall.delivery
+            ? "⏱ Freshly grilled at the stall — about 15 min."
+            : "⏱ Preparation takes about 15 min. Delivery may take more than 30 min depending on distance and traffic."}
         </p>
+        )}
       </header>
 
       <div className="sticky top-0 z-10 bg-white/95 shadow-sm backdrop-blur dark:bg-stone-900/95">

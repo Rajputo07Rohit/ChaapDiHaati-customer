@@ -13,6 +13,14 @@ interface StoreStatusResponse {
   changesInSeconds: number | null;
   nextChangeTime: string | null;
   weekSummary: { label: string; hours: string }[];
+  stall?: { dineIn: boolean; delivery: boolean };
+}
+
+/** Stall ordering switched on by the admin: the app shows the stall menu and only these order types. */
+export interface StallMode {
+  active: boolean;
+  dineIn: boolean;
+  delivery: boolean;
 }
 
 export interface StoreStatus {
@@ -31,6 +39,7 @@ export interface StoreStatus {
   secondsLeft: number | null;
   /** Epoch ms of the next schedule flip — lets a component run its own 1-second countdown without every consumer re-rendering each second. */
   changesAt: number | null;
+  stall: StallMode;
 }
 
 /** Mount once near the app root: re-checks the store status every few seconds
@@ -78,6 +87,11 @@ export function useStoreStatus(): StoreStatus {
     manual: data ? data.mode !== "AUTO" : false,
     secondsLeft,
     changesAt: data?.changesInSeconds != null ? dataUpdatedAt + data.changesInSeconds * 1000 : null,
+    stall: {
+      active: !!(data?.stall?.dineIn || data?.stall?.delivery),
+      dineIn: !!data?.stall?.dineIn,
+      delivery: !!data?.stall?.delivery,
+    },
   };
 }
 
@@ -105,6 +119,12 @@ export function formatDuration(seconds: number): string {
 export function formatClock(hhmm: string): string {
   const [h, m] = hhmm.split(":").map(Number);
   return `${h % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""} ${h < 12 ? "AM" : "PM"}`;
+}
+
+/** The categories of the menu currently being served: the stall menu while stall ordering is on, the restaurant menu otherwise. */
+export function categoriesForMode<T extends { channel?: "MAIN" | "STALL" }>(categories: T[], stall: StallMode): T[] {
+  const channel = stall.active ? "STALL" : "MAIN";
+  return categories.filter((c) => (c.channel ?? "MAIN") === channel);
 }
 
 /** Mirrors the server rule: rumali roti needs a Tandoori (soya/paneer/mushroom) or Momo item in the cart. Extras, beverages and rolls don't unlock it. */

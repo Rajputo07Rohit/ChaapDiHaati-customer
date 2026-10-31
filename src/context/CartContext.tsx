@@ -21,6 +21,9 @@ export interface CartLine {
   key: string;
   /** Customer's note for the kitchen about this item ("no onion", "extra spicy"). */
   note?: string;
+  /** An extra (cream, cheese…) meant for one dish only: the key and name of the cart line it goes with. The kitchen sees "For: <name>". */
+  forKey?: string;
+  forName?: string;
 }
 
 interface CartContextValue {
@@ -29,6 +32,8 @@ interface CartContextValue {
   setQuantity: (key: string, quantity: number) => void;
   removeItem: (key: string) => void;
   setNote: (key: string, note: string) => void;
+  /** Points an extra at the dish it's for (or back to "whole order" with null). */
+  attachExtra: (key: string, target: { key: string; name: string } | null) => void;
   /** Replaces the cart (used by "Reorder"). */
   replaceAll: (lines: CartLine[]) => void;
   clear: () => void;
@@ -58,6 +63,12 @@ function persist(lines: CartLine[]) {
   }
 }
 
+/** Same item + size + add-ons (+ the dish an extra is for) = one cart line. */
+function lineKey(item: Pick<CartLine, "menuItemId" | "priceType" | "addons" | "forKey">): string {
+  const addonKey = [...item.addons].map((a) => a.id).sort().join(",");
+  return `${item.menuItemId}:${item.priceType}:${addonKey}${item.forKey ? `@${item.forKey}` : ""}`;
+}
+
 export function CartProvider({ children }: { children: ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>(loadStored);
 
@@ -67,8 +78,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }
 
   function addItem(item: Omit<CartLine, "key" | "quantity">, quantity: number) {
-    const addonKey = [...item.addons].map((a) => a.id).sort().join(",");
-    const key = `${item.menuItemId}:${item.priceType}:${addonKey}`;
+    const key = lineKey(item);
     const existing = lines.find((l) => l.key === key);
     if (existing) {
       update(lines.map((l) => (l.key === key ? { ...l, quantity: l.quantity + quantity } : l)));
@@ -83,7 +93,22 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }
 
   function removeItem(key: string) {
-    update(lines.filter((l) => l.key !== key));
+    // Extras attached to a dish go with it.
+    update(lines.filter((l) => l.key !== key && l.forKey !== key));
+  }
+
+  function attachExtra(key: string, target: { key: string; name: string } | null) {
+    const line = lines.find((l) => l.key === key);
+    if (!line) return;
+    const moved = { ...line, forKey: target?.key, forName: target?.name };
+    const newKey = lineKey(moved);
+    const same = lines.find((l) => l.key === newKey && l.key !== key);
+    // Already have this extra for that dish: merge the quantities into one line.
+    update(
+      same
+        ? lines.filter((l) => l.key !== key).map((l) => (l.key === newKey ? { ...l, quantity: l.quantity + line.quantity } : l))
+        : lines.map((l) => (l.key === key ? { ...moved, key: newKey } : l))
+    );
   }
 
   function setNote(key: string, note: string) {
@@ -105,7 +130,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const itemCount = useMemo(() => lines.reduce((sum, l) => sum + l.quantity, 0), [lines]);
 
   return (
-    <CartContext.Provider value={{ lines, addItem, setQuantity, removeItem, setNote, replaceAll, clear, totalPaise, itemCount }}>
+    <CartContext.Provider value={{ lines, addItem, setQuantity, removeItem, setNote, attachExtra, replaceAll, clear, totalPaise, itemCount }}>
       {children}
     </CartContext.Provider>
   );

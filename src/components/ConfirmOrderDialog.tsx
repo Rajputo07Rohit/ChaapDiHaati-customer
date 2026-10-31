@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ShoppingBag, UtensilsCrossed, Wallet } from "lucide-react";
 import { DeliveryTimeNotice } from "./DeliveryTimeNotice";
 import { CartLine } from "../context/CartContext";
 
@@ -9,12 +9,15 @@ function formatRupees(paise: number): string {
 
 const ORDER_TYPE_LABEL: Record<string, string> = { DINE_IN: "Dine-in", TAKEAWAY: "Takeaway", DELIVERY: "Delivery" };
 
+
 /** Last stop before an order is actually submitted/charged: shows exactly
  * what will be sent and warns that an accepted order can't be changed. */
 export function ConfirmOrderDialog({
   lines,
   totalPaise,
   orderType,
+  payFirst = false,
+  atStall = false,
   busy,
   onCancel,
   onConfirm,
@@ -22,10 +25,16 @@ export function ConfirmOrderDialog({
   lines: CartLine[];
   totalPaise: number;
   orderType: string;
+  /** Stall dine-in: the customer pays at the counter before the order is confirmed. */
+  payFirst?: boolean;
+  /** Ordering from the stall menu — wording says "stall" instead of "restaurant". */
+  atStall?: boolean;
   busy?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const notDelivered = orderType === "DINE_IN" || orderType === "TAKEAWAY";
+  const place = atStall ? "stall" : "restaurant";
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !busy && onCancel();
     document.addEventListener("keydown", onKey);
@@ -36,15 +45,38 @@ export function ConfirmOrderDialog({
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label="Confirm your order">
       <button aria-label="Close" onClick={onCancel} disabled={busy} className="absolute inset-0 bg-black/55 backdrop-blur-[1px]" />
       <div className="cdh-rise relative w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-stone-900 sm:rounded-3xl">
-        <div className="flex items-start gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
-            <AlertTriangle size={20} />
+        {notDelivered ? (
+          // Dine-in / takeaway: make sure they didn't mean delivery.
+          <div className="flex items-start gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400">
+              {orderType === "DINE_IN" ? <UtensilsCrossed size={20} /> : <ShoppingBag size={20} />}
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-stone-900 dark:text-stone-100">
+                Are you sure you want {orderType === "DINE_IN" ? (atStall ? "Stall Dine-in" : "Dine-in") : "Takeaway"}?
+              </h2>
+              <p className="mt-0.5 text-sm text-stone-600 dark:text-stone-300">
+                {orderType === "DINE_IN"
+                  ? `You'll eat at our ${place}. This order will `
+                  : `You'll pick up your order from the ${place} counter yourself. This order will `}
+                <b className="text-rose-600 dark:text-rose-400">not be delivered</b>.
+              </p>
+              <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
+                {orderType === "DINE_IN" ? "Aap yahin baith kar khayenge" : "Aap counter se khud order lenge"} — delivery nahi hogi.
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg font-bold text-stone-900 dark:text-stone-100">Check your order before placing</h2>
-            <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">Order dene se pehle ek baar zaroor check kar lein.</p>
+        ) : (
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
+              <AlertTriangle size={20} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-stone-900 dark:text-stone-100">Check your order before placing</h2>
+              <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">Order dene se pehle ek baar zaroor check kar lein.</p>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="mt-4 rounded-2xl bg-stone-50 p-3 dark:bg-stone-800">
           <div className="mb-1.5 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-stone-400">
@@ -58,6 +90,7 @@ export function ConfirmOrderDialog({
                   {l.name}
                   {l.priceType !== "SINGLE" && <span className="text-stone-400"> ({l.priceType === "HALF" ? "Half" : "Full"})</span>}
                   {l.addons.length > 0 && <span className="block text-xs text-stone-400">+ {l.addons.map((a) => a.name).join(", ")}</span>}
+                  {l.forName && <span className="block text-xs text-stone-400">for {l.forName}</span>}
                 </span>
                 <span className="shrink-0 font-semibold">× {l.quantity}</span>
               </li>
@@ -76,6 +109,15 @@ export function ConfirmOrderDialog({
           </span>
         </p>
 
+        {payFirst && (
+          <p className="mt-3 flex gap-2.5 rounded-xl bg-brand-50 px-3.5 py-3 text-sm text-brand-800 dark:bg-brand-900/20 dark:text-brand-300">
+            <Wallet size={18} className="mt-0.5 shrink-0" />
+            <span>
+              <b>Next: pay {formatRupees(totalPaise)} at the stall counter.</b> We start preparing once your payment is confirmed.
+            </span>
+          </p>
+        )}
+
         {orderType === "DELIVERY" && <DeliveryTimeNotice compact className="mt-3" />}
 
         <div className="mt-4 flex gap-2.5">
@@ -84,14 +126,20 @@ export function ConfirmOrderDialog({
             disabled={busy}
             className="flex-1 rounded-2xl border border-stone-200 py-3.5 font-semibold text-stone-700 disabled:opacity-60 dark:border-stone-700 dark:text-stone-200"
           >
-            Go back
+            {notDelivered ? "No, change" : "Go back"}
           </button>
           <button
             onClick={onConfirm}
             disabled={busy}
             className="flex-[1.4] rounded-2xl bg-brand-600 py-3.5 font-semibold text-white shadow-lg shadow-brand-600/30 active:scale-[0.98] disabled:opacity-60"
           >
-            {busy ? "Placing…" : "Confirm & place order"}
+            {busy
+              ? "Placing…"
+              : payFirst
+                ? "Yes, place order & pay"
+                : notDelivered
+                  ? `Yes, ${orderType === "DINE_IN" ? "dine-in" : "takeaway"} — place order`
+                  : "Confirm & place order"}
           </button>
         </div>
       </div>
