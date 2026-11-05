@@ -86,6 +86,48 @@ function apiItems(lines: CartLine[]) {
   }));
 }
 
+/** Asked when the customer moves off Delivery (the default) to Takeaway or Dine-in. */
+function OrderTypeSwitchDialog({
+  type,
+  atStall,
+  current,
+  onCancel,
+  onConfirm,
+}: {
+  type: OrderType;
+  atStall: boolean;
+  current: OrderType;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const place = atStall ? "stall" : "restaurant";
+  const label = type === "DINE_IN" ? (atStall ? "Stall Dine-in" : "Dine-in") : "Takeaway";
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label={`Switch to ${label}`}>
+      <button aria-label="Close" onClick={onCancel} className="absolute inset-0 bg-black/55 backdrop-blur-[1px]" />
+      <div className="cdh-rise relative w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-stone-900 sm:rounded-3xl">
+        <h2 className="text-lg font-bold text-stone-900 dark:text-stone-100">Switch to {label}?</h2>
+        <p className="mt-1 text-sm text-stone-600 dark:text-stone-300">
+          {type === "DINE_IN"
+            ? `You'll eat at our ${place}. This order will NOT be delivered to your address.`
+            : `You'll pick up this order yourself from our ${place}. It will NOT be delivered to your address.`}
+        </p>
+        <div className="mt-5 flex gap-2">
+          <button
+            onClick={onCancel}
+            className="flex-1 rounded-2xl border border-stone-200 py-3 font-semibold text-stone-700 dark:border-stone-700 dark:text-stone-200"
+          >
+            {current === "DELIVERY" ? "Keep Delivery" : "Cancel"}
+          </button>
+          <button onClick={onConfirm} className="flex-1 rounded-2xl bg-brand-600 py-3 font-semibold text-white active:scale-95">
+            Okay, {label}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CartSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { lines, addItem, setQuantity, removeItem, setNote, attachExtra, replaceAll, totalPaise, clear } = useCart();
   const [editingNote, setEditingNote] = useState<string | null>(null);
@@ -123,19 +165,21 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   const blocked = !store.isOpen || rumaliOnly || drinksOnly || pausedRolls || soldOutKeys.length > 0;
   const navigate = useNavigate();
 
-  const [orderType, setOrderType] = useState<OrderType>("TAKEAWAY");
+  const [orderType, setOrderType] = useState<OrderType>("DELIVERY");
+  // Delivery is the default; picking takeaway/dine-in asks first so nobody chooses it by mistake.
+  const [pendingType, setPendingType] = useState<OrderType | null>(null);
   // The stall only does the order types the admin switched on (dine-in and/or delivery).
   const orderTypes: OrderType[] = store.stall.active
     ? [...(store.stall.dineIn ? (["DINE_IN"] as const) : []), ...(store.stall.delivery ? (["DELIVERY"] as const) : [])]
     : ["DINE_IN", "TAKEAWAY", "DELIVERY"];
-  // Whenever the offered types change (stall switched on/off), start again from the sensible default —
-  // takeaway for the restaurant, the first stall option for the stall — instead of keeping e.g. a stale "Delivery".
+  // Whenever the offered types change (stall switched on/off), start again from the default —
+  // delivery when it's offered, otherwise the first available option.
   const orderTypesKey = orderTypes.join();
   const lastOrderTypesKey = useRef<string | null>(null);
   useEffect(() => {
     if (lastOrderTypesKey.current === orderTypesKey) return;
     lastOrderTypesKey.current = orderTypesKey;
-    setOrderType(store.stall.active ? orderTypes[0] : "TAKEAWAY");
+    setOrderType(orderTypes.includes("DELIVERY") ? "DELIVERY" : orderTypes[0]);
   }, [orderTypesKey]);
   const [customerName, setCustomerName] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
@@ -706,6 +750,8 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                       <button
                         key={t}
                         onClick={() => {
+                          if (t === orderType) return;
+                          if (t !== "DELIVERY") return setPendingType(t);
                           setOrderType(t);
                           setAddressError(null);
                           setNameError(null);
@@ -957,6 +1003,20 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
           onPaid={onCashfreePaid}
           onTimeout={() => closeCashfreePayment("timeout")}
           onCancel={() => closeCashfreePayment("cancel")}
+        />
+      )}
+      {pendingType && (
+        <OrderTypeSwitchDialog
+          type={pendingType}
+          atStall={store.stall.active}
+          current={orderType}
+          onCancel={() => setPendingType(null)}
+          onConfirm={() => {
+            setOrderType(pendingType);
+            setAddressError(null);
+            setNameError(null);
+            setPendingType(null);
+          }}
         />
       )}
       {confirmAction && (
