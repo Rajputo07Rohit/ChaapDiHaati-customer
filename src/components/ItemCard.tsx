@@ -98,7 +98,7 @@ function AddonPickerSheet({
   );
 }
 
-export function ItemCard({ item }: { item: MenuItemRow }) {
+export function ItemCard({ item, rollPaused = false }: { item: MenuItemRow; rollPaused?: boolean }) {
   const { lines, addItem, setQuantity } = useCart();
   const isAvailable = item.status === "ACTIVE";
   const { isOpen: storeOpen } = useStoreStatus();
@@ -150,6 +150,11 @@ export function ItemCard({ item }: { item: MenuItemRow }) {
               Out of stock
             </span>
           )}
+          {isAvailable && rollPaused && (
+            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+              After 9 PM
+            </span>
+          )}
         </div>
 
         <div className="mt-2 space-y-2">
@@ -170,6 +175,8 @@ export function ItemCard({ item }: { item: MenuItemRow }) {
                 </div>
                 {!isAvailable ? null : !storeOpen ? (
                   <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-medium text-stone-500 dark:bg-stone-700 dark:text-stone-400">Closed</span>
+                ) : rollPaused ? (
+                  <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-medium text-stone-500 dark:bg-stone-700 dark:text-stone-400">Not now</span>
                 ) : activeAddons.length > 0 ? (
                   <div className="flex items-center gap-2">
                     {addonCartQty > 0 && <span className="text-xs font-semibold text-stone-500 dark:text-stone-400">× {addonCartQty} in cart</span>}

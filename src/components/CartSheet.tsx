@@ -8,7 +8,7 @@ import { AppliedPromo, CustomerProfile, MenuCategory, OrderRow } from "../api/ty
 import { DeliveryTimeNotice } from "./DeliveryTimeNotice";
 import { CashfreePaymentPanel } from "./CashfreePaymentPanel";
 import { ConfirmOrderDialog } from "./ConfirmOrderDialog";
-import { beveragesNeedFood, categoriesForMode, rumaliNeedsMain, useStoreStatus } from "../hooks";
+import { beveragesNeedFood, categoriesForMode, isRollCategory, ROLL_PAUSE_LABEL, rumaliNeedsMain, useRollsPaused, useStoreStatus } from "../hooks";
 import { CartLine, useCart } from "../context/CartContext";
 import { useCustomerAuth } from "../context/CustomerAuthContext";
 import { QuantityStepper } from "./QuantityStepper";
@@ -114,11 +114,13 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
   const topLines = lines.filter((l) => !l.forKey || !lines.some((p) => p.key === l.forKey));
   const rumaliOnly = rumaliNeedsMain(lines, categoryOf);
   const drinksOnly = beveragesNeedFood(lines, categoryOf);
+  const rollsPaused = useRollsPaused();
+  const pausedRolls = rollsPaused && lines.some((l) => isRollCategory(categoryOf.get(l.menuItemId) ?? ""));
   // Items that sold out (or left the menu) while sitting in the cart — caught here, not as an error at checkout.
   const menuStatus = new Map<string, string>();
   for (const c of menuCategories) for (const i of c.items) menuStatus.set(i.id, i.status);
   const soldOutKeys = menuData ? lines.filter((l) => menuStatus.get(l.menuItemId) !== "ACTIVE").map((l) => l.key) : [];
-  const blocked = !store.isOpen || rumaliOnly || drinksOnly || soldOutKeys.length > 0;
+  const blocked = !store.isOpen || rumaliOnly || drinksOnly || pausedRolls || soldOutKeys.length > 0;
   const navigate = useNavigate();
 
   const [orderType, setOrderType] = useState<OrderType>("TAKEAWAY");
@@ -899,6 +901,11 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                   Remove them
                 </button>
               </div>
+            )}
+            {store.isOpen && pausedRolls && (
+              <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                Rolls aren't available for online orders from {ROLL_PAUSE_LABEL} — please remove them to continue.
+              </p>
             )}
             {store.isOpen && drinksOnly && (
               <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">

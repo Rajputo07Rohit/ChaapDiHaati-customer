@@ -141,6 +141,26 @@ export function beveragesNeedFood(lines: { menuItemId: string }[], categoryOf: M
   return !lines.some((l) => !/beverage|drink|extra/i.test(cat(l)));
 }
 
+/** Mirrors the server rule: rolls can't be ordered in the app from 7:30 PM to 9 PM IST. */
+export const ROLL_PAUSE_LABEL = "7:30 PM – 9 PM";
+export const isRollCategory = (name: string) => /roll/i.test(name);
+
+export function isRollPauseNow(now = new Date()): boolean {
+  const ist = new Date(now.getTime() + 5.5 * 3_600_000);
+  const minute = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  return minute >= 19 * 60 + 30 && minute < 21 * 60;
+}
+
+/** Re-checks every 30s so the menu flips on its own at 7:30 PM and 9 PM. */
+export function useRollsPaused(): boolean {
+  const [paused, setPaused] = useState(() => isRollPauseNow());
+  useEffect(() => {
+    const t = setInterval(() => setPaused(isRollPauseNow()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  return paused;
+}
+
 /** Business contact details (shared cache with the footer). */
 export function useBusinessInfo() {
   return useQuery({

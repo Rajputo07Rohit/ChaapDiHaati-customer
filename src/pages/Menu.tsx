@@ -4,7 +4,7 @@ import { Bike, ChevronRight, ClipboardList, Leaf, Moon, RefreshCw, Search, Store
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { MenuCategory, OrderRow } from "../api/types";
-import { categoriesForMode, useBusinessInfo, useStoreStatus } from "../hooks";
+import { categoriesForMode, isRollCategory, ROLL_PAUSE_LABEL, useBusinessInfo, useRollsPaused, useStoreStatus } from "../hooks";
 import { InstallPrompt } from "../components/AppBanners";
 import { useTheme } from "../context/ThemeContext";
 import { CategoryTabs } from "../components/CategoryTabs";
@@ -69,6 +69,9 @@ export function Menu() {
     ? categories.flatMap((c) => c.items).filter((item) => item.name.toLowerCase().includes(query))
     : null;
   const current = categories.find((c) => c.id === activeCategory);
+  const rollsPaused = useRollsPaused();
+  const rollCategoryIds = new Set(categories.filter((c) => isRollCategory(c.name)).map((c) => c.id));
+  const isPausedRoll = (item: { category_id: string }) => rollsPaused && rollCategoryIds.has(item.category_id);
 
   return (
     <div className="min-h-screen bg-white pb-28 dark:bg-stone-950">
@@ -195,15 +198,20 @@ export function Menu() {
             {searchResults!.length === 0 ? (
               <p className="mt-8 text-center text-stone-400">No items match "{search}".</p>
             ) : (
-              searchResults!.map((item) => <ItemCard key={item.id} item={item} />)
+              searchResults!.map((item) => <ItemCard key={item.id} item={item} rollPaused={isPausedRoll(item)} />)
             )}
           </div>
         )}
 
         {!isLoading && !query && current && (
           <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
+            {rollsPaused && rollCategoryIds.has(current.id) && (
+              <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 sm:col-span-2 xl:col-span-3 dark:bg-amber-900/20 dark:text-amber-300">
+                Rolls aren't available for online orders from {ROLL_PAUSE_LABEL}. Order again after 9 PM!
+              </p>
+            )}
             {current.items.map((item) => (
-              <ItemCard key={item.id} item={item} />
+              <ItemCard key={item.id} item={item} rollPaused={isPausedRoll(item)} />
             ))}
           </div>
         )}
