@@ -50,7 +50,10 @@ function AddonPickerSheet({
     });
   }
 
-  const selected = addons.filter((a) => selectedIds.has(a.id));
+  // A combo's drink list only offers what's in stock in Beverages.
+  const options = pickOne ? addons.filter((a) => a.in_stock !== false) : addons;
+  const noneInStock = pickOne && options.length === 0;
+  const selected = options.filter((a) => selectedIds.has(a.id));
   const unitTotal = variant.pricePaise + selected.reduce((s, a) => s + a.price_paise, 0);
 
   return (
@@ -70,9 +73,9 @@ function AddonPickerSheet({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-400">{pickOne ? "Choose one" : "Add extras"}</p>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-400">{pickOne ? "Choose your cold drink" : "Add extras"}</p>
           <div className="space-y-2">
-            {addons.map((a) => (
+            {options.map((a) => (
               <label
                 key={a.id}
                 className="flex cursor-pointer items-center justify-between rounded-xl border border-stone-200 px-3 py-2.5 dark:border-stone-700"
@@ -92,6 +95,14 @@ function AddonPickerSheet({
             ))}
           </div>
 
+          {pickOne && (
+            <p className={`mt-3 text-xs ${noneInStock ? "font-medium text-amber-700 dark:text-amber-400" : "text-stone-500 dark:text-stone-400"}`}>
+              {noneInStock
+                ? "* Your choice of drink is out of stock right now — we will serve whichever cold drink is available."
+                : "* Only drinks in stock right now are shown. If your drink runs out, we will serve whichever cold drink is available."}
+            </p>
+          )}
+
           <div className="mt-5 flex items-center justify-between">
             <span className="text-sm font-medium text-stone-700 dark:text-stone-300">Quantity</span>
             <QuantityStepper value={quantity} onChange={setQuantity} />
@@ -101,10 +112,10 @@ function AddonPickerSheet({
         <div className="border-t border-stone-100 px-5 py-4 dark:border-stone-800">
           <button
             onClick={() => onConfirm(selected, quantity)}
-            disabled={pickOne && selected.length === 0}
+            disabled={pickOne && !noneInStock && selected.length === 0}
             className="w-full rounded-2xl bg-brand-600 py-3.5 font-semibold text-white active:scale-95 disabled:opacity-50 disabled:active:scale-100"
           >
-            {pickOne && selected.length === 0 ? "Choose an option" : `Add ${formatRupees(unitTotal * quantity)}`}
+            {pickOne && !noneInStock && selected.length === 0 ? "Choose your cold drink" : `Add ${formatRupees(unitTotal * quantity)}`}
           </button>
         </div>
       </div>
