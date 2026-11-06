@@ -48,11 +48,18 @@ function estimateDeliveryFee(subtotalPaise: number): number {
   return 0;
 }
 
-/** Packing charge per plate (never for rolls) — display mirror of the backend's packingFeeFor (the backend decides what's charged). */
+/** Packing charge per plate (₹6 per combo, never for rolls) — display mirror of the backend's packingFeeFor (the backend decides what's charged). */
 const PACKING_FEE_PAISE = { HALF: 500, FULL: 900, SINGLE: 0 } as const;
+const COMBO_PACKING_FEE_PAISE = 600;
+
+function linePackingFee(category: string, priceType: CartLine["priceType"]): number {
+  if (/roll/i.test(category)) return 0;
+  if (/combo/i.test(category)) return COMBO_PACKING_FEE_PAISE;
+  return PACKING_FEE_PAISE[priceType];
+}
 
 function estimatePackingFee(lines: CartLine[], categoryOf: Map<string, string>): number {
-  return lines.reduce((s, l) => s + (/roll/i.test(categoryOf.get(l.menuItemId) ?? "") ? 0 : PACKING_FEE_PAISE[l.priceType] * l.quantity), 0);
+  return lines.reduce((s, l) => s + linePackingFee(categoryOf.get(l.menuItemId) ?? "", l.priceType) * l.quantity, 0);
 }
 
 /**
@@ -853,7 +860,7 @@ export function CartSheet({ open, onClose }: { open: boolean; onClose: () => voi
                         <span>
                           <span className="font-medium">Packing</span>{" "}
                           <span className="text-stone-500 dark:text-stone-400">· {formatRupees(estimatePackingFee(lines, categoryOf))}</span>
-                          <span className="block text-xs text-stone-400">₹5 per half plate · ₹9 per full plate</span>
+                          <span className="block text-xs text-stone-400">₹5 per half plate · ₹9 per full plate · ₹6 per combo</span>
                         </span>
                       </span>
                       <input
