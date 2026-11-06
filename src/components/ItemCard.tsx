@@ -22,12 +22,15 @@ function AddonPickerSheet({
   itemName,
   variant,
   addons,
+  pickOne = false,
   onClose,
   onConfirm,
 }: {
   itemName: string;
   variant: Variant;
   addons: MenuItemAddonRow[];
+  /** Exactly one option must be chosen (radio buttons), e.g. a combo's cold drink. */
+  pickOne?: boolean;
   onClose: () => void;
   onConfirm: (selected: MenuItemAddonRow[], quantity: number) => void;
 }) {
@@ -35,6 +38,10 @@ function AddonPickerSheet({
   const [quantity, setQuantity] = useState(1);
 
   function toggle(id: string) {
+    if (pickOne) {
+      setSelectedIds(new Set([id]));
+      return;
+    }
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -63,7 +70,7 @@ function AddonPickerSheet({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-400">Add extras</p>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-400">{pickOne ? "Choose one" : "Add extras"}</p>
           <div className="space-y-2">
             {addons.map((a) => (
               <label
@@ -71,10 +78,16 @@ function AddonPickerSheet({
                 className="flex cursor-pointer items-center justify-between rounded-xl border border-stone-200 px-3 py-2.5 dark:border-stone-700"
               >
                 <span className="flex items-center gap-2 text-sm text-stone-800 dark:text-stone-200">
-                  <input type="checkbox" checked={selectedIds.has(a.id)} onChange={() => toggle(a.id)} className="h-4 w-4 accent-brand-600" />
+                  <input
+                    type={pickOne ? "radio" : "checkbox"}
+                    name={pickOne ? "addon-choice" : undefined}
+                    checked={selectedIds.has(a.id)}
+                    onChange={() => toggle(a.id)}
+                    className="h-4 w-4 accent-brand-600"
+                  />
                   {a.name}
                 </span>
-                <span className="text-sm text-stone-500 dark:text-stone-400">+{formatRupees(a.price_paise)}</span>
+                {a.price_paise > 0 && <span className="text-sm text-stone-500 dark:text-stone-400">+{formatRupees(a.price_paise)}</span>}
               </label>
             ))}
           </div>
@@ -88,9 +101,10 @@ function AddonPickerSheet({
         <div className="border-t border-stone-100 px-5 py-4 dark:border-stone-800">
           <button
             onClick={() => onConfirm(selected, quantity)}
-            className="w-full rounded-2xl bg-brand-600 py-3.5 font-semibold text-white active:scale-95"
+            disabled={pickOne && selected.length === 0}
+            className="w-full rounded-2xl bg-brand-600 py-3.5 font-semibold text-white active:scale-95 disabled:opacity-50 disabled:active:scale-100"
           >
-            Add {formatRupees(unitTotal * quantity)}
+            {pickOne && selected.length === 0 ? "Choose an option" : `Add ${formatRupees(unitTotal * quantity)}`}
           </button>
         </div>
       </div>
@@ -156,6 +170,7 @@ export function ItemCard({ item, rollPaused = false }: { item: MenuItemRow; roll
             </span>
           )}
         </div>
+        {item.description && <p className="mt-0.5 text-xs leading-snug text-stone-500 dark:text-stone-400">{item.description}</p>}
 
         <div className="mt-2 space-y-2">
           {variants.map((v) => {
@@ -212,6 +227,7 @@ export function ItemCard({ item, rollPaused = false }: { item: MenuItemRow; roll
           itemName={item.name}
           variant={pickingVariant}
           addons={activeAddons}
+          pickOne={item.addon_mode === "PICK_ONE"}
           onClose={() => setPickingVariant(null)}
           onConfirm={(selected, quantity) => {
             addItem(

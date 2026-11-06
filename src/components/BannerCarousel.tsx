@@ -28,6 +28,10 @@ export function BannerCarousel() {
 
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
+  // Banners come in different shapes (a 2:1 poster, a 6:1 strip). Each slide is
+  // shown whole at its own aspect ratio — never cropped — and the frame
+  // resizes to the slide on screen.
+  const [ratios, setRatios] = useState<Record<string, number>>({});
   const touchStartX = useRef<number | null>(null);
   const touchDeltaX = useRef(0);
 
@@ -38,6 +42,9 @@ export function BannerCarousel() {
   }, [banners.length, paused]);
 
   if (banners.length === 0) return data ? <DefaultHero /> : null;
+
+  const active = banners[index % banners.length];
+  const activeRatio = ratios[active.id] ?? 2;
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX;
@@ -68,10 +75,11 @@ export function BannerCarousel() {
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="relative overflow-hidden rounded-3xl shadow-lg shadow-stone-300/40 ring-1 ring-black/5 dark:shadow-black/40 dark:ring-white/10"
+        style={{ aspectRatio: activeRatio }}
+        className="relative max-h-80 overflow-hidden rounded-3xl bg-[#fdf1df] transition-[aspect-ratio] duration-500 shadow-lg shadow-stone-300/40 ring-1 ring-black/5 dark:shadow-black/40 dark:ring-white/10"
       >
         <div
-          className="flex transition-transform duration-500 ease-out"
+          className="flex h-full transition-transform duration-500 ease-out"
           style={{ transform: `translateX(-${index * 100}%)` }}
         >
           {banners.map((b) => (
@@ -80,13 +88,16 @@ export function BannerCarousel() {
               href={b.link_url ?? undefined}
               target={b.link_url ? "_blank" : undefined}
               rel={b.link_url ? "noreferrer" : undefined}
-              className="relative block w-full shrink-0"
+              className="relative block h-full w-full shrink-0"
             >
               <img
                 src={b.image_url}
                 alt={b.title ?? ""}
-                className="h-48 w-full object-cover sm:h-64 lg:h-80"
-                loading="lazy"
+                className="h-full w-full object-contain"
+                onLoad={(e) => {
+                  const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+                  if (w && h) setRatios((prev) => (prev[b.id] ? prev : { ...prev, [b.id]: w / h }));
+                }}
                 onError={() => setFailed((prev) => new Set(prev).add(b.id))}
               />
               {b.title && (
